@@ -48,7 +48,8 @@ public class AuthController : ControllerBase
             if (user == null) return Unauthorized(new { message = "Incorrect email or password" });
 
             var isPasswordValid = await _userManager.CheckPasswordAsync(user, model.Password);
-            if (!isPasswordValid) return Unauthorized(new { message = "Incorrect email or password" });
+            Console.WriteLine(model.Password);
+            if (!isPasswordValid) return Unauthorized(new { message = "Incorrect email or passwords" });
 
             var roles = await _userManager.GetRolesAsync(user);
             var authClaims = new List<Claim>
