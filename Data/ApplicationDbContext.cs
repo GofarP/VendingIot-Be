@@ -11,6 +11,8 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
     }
 
     public DbSet<Department> Departments { get; set; }
+    public DbSet<PermissionCategory> PermissionCategories { get; set; }
+
 
 
     protected override void OnModelCreating(ModelBuilder builder)

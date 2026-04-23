@@ -69,8 +69,8 @@ public class DepartmentController : ControllerBase
     [HttpPost]
     public async Task<IActionResult> CreateDepartment(Department department)
     {
-        Validation.Required(ModelState, "Name", department.Name, "Pleasae fill department name");
-        Validation.Required(ModelState, "Description", department.Description, "Please department description");
+        Validation.Required(ModelState, "Name", department.Name, "Please fill department name");
+        Validation.Required(ModelState, "Description", department.Description, "Please fill department description");
 
         if (!string.IsNullOrEmpty(department.Name))
         {
