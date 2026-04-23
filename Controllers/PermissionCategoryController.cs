@@ -72,14 +72,14 @@ public class PermissionCategoryController : ControllerBase
 
         if (!string.IsNullOrEmpty(permissionCategory.Name))
         {
-            await Validation.Unique(ModelState, _context.PermissionCategories, d => d.Name.ToLower() == permissionCategory.Name.ToLower(), "Name", "This permission category already exist");
+            await Validation.Unique(ModelState, _context.PermissionCategories, d => d.Name.ToLower() == permissionCategory.Name.ToLower(), "Name", "This permission category name already exist");
         }
 
         if (!ModelState.IsValid)
         {
             return BadRequest(new
             {
-                message = "Validation Failed",
+                message = "Validation failed",
                 errors = ModelState.ToDictionary(
                     kvp => kvp.Key,
                     kvp => kvp.Value?.Errors.Select(e => e.ErrorMessage).ToArray()
@@ -91,17 +91,16 @@ public class PermissionCategoryController : ControllerBase
         {
             _context.PermissionCategories.Add(permissionCategory);
             await _context.SaveChangesAsync();
-            return CreatedAtAction(nameof(GetPermissionCategories), new { id = permissionCategory.Id }, new
+            return CreatedAtAction(nameof(GetPermissionCategory), new { id = permissionCategory.Id }, new
             {
-                message = "Berhasil membuat permission category baru",
+                message = "Berhasil Membuat permission category baru",
                 data = permissionCategory
             });
         }
         catch (Exception e)
         {
-            return StatusCode(500, new { message = "Fail to safe to database.", error = e.Message });
+            return StatusCode(500, new { message = "Gagal menyimpan ke database.", error = e.Message });
         }
-
     }
 
     [HttpPut("{id}")]
@@ -168,7 +167,7 @@ public class PermissionCategoryController : ControllerBase
         _context.PermissionCategories.Remove(permissionCategory);
         await _context.SaveChangesAsync();
         return Ok(new { message = $"Permission Category {permissionCategory.Name} berhasil dihapus." });
-          
+
     }
 
 }

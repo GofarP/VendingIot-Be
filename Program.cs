@@ -90,7 +90,7 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseCors();
-app.UseHttpsRedirection();
+// app.UseHttpsRedirection();
 
 // Urutan ini tidak boleh terbalik!
 app.UseAuthentication(); // 1. Siapa kamu? (Membaca JWT)
