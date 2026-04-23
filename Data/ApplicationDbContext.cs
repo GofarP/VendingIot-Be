@@ -13,15 +13,19 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
     public DbSet<Department> Departments { get; set; }
     public DbSet<PermissionCategory> PermissionCategories { get; set; }
 
-
+    public DbSet<Permission> Permissions { get; set; }
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
 
-        // builder.ApplyConfiguration(new RoleConfiguration());
-
-        // builder.ApplyConfiguration(new UserRoleConfiguration());
+        builder.Entity<Permission>(entity =>
+        {
+            entity.HasOne(p => p.PermissionCategory)
+           .WithMany(c => c.Permissions)
+           .HasForeignKey(p => p.PermissionCategoryId)
+           .OnDelete(DeleteBehavior.Cascade);
+        });
 
         builder.Entity<ApplicationUser>(entity =>
         {

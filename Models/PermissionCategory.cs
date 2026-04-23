@@ -2,13 +2,16 @@ using System.ComponentModel.DataAnnotations;
 using Microsoft.EntityFrameworkCore;
 
 namespace VendingIot.Models;
-[Index(nameof(Name), IsUnique =true)]
+
+[Index(nameof(Name), IsUnique = true)]
 
 public class PermissionCategory
 {
-    public int Id{get; set;}
+    public int Id { get; set; }
 
-    public string Name{get; set;}
+    public string Name { get; set; }
 
-    public string Description {get;set;}
+    public string Description { get; set; }
+
+    public ICollection<Permission> Permissions { get; set; } = new List<Permission>();
 }
