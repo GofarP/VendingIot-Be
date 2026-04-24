@@ -35,15 +35,11 @@ public class PermissionValidator : AbstractValidator<Permission>
     // Fungsi Cek Ketersediaan Kategori (isExist)
     private async Task<bool> CategoryExists(int categoryId, CancellationToken token)
     {
-        // Jika ID kurang dari 1, biarkan aturan GreaterThan(0) yang menangani error-nya
         if (categoryId <= 0) return true; 
 
-        // Mengecek ke tabel PermissionCategories, apakah ada ID yang cocok?
         var exists = await _context.PermissionCategories
             .AnyAsync(c => c.Id == categoryId, token);
 
-        // Berbeda dengan BeUnique (yang me-return !exists), 
-        // di sini kita me-return exists karena kita MEMANG INGIN data tersebut ada.
         return exists;
     }
 }

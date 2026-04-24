@@ -15,6 +15,12 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
 
     public DbSet<Permission> Permissions { get; set; }
 
+    public DbSet<ItemCategory>ItemCategories{get;set;}
+
+    public DbSet<Item> Items {get; set;}
+
+    public DbSet<VendingMachine>VendingMachines{get; set;}
+
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
@@ -25,6 +31,14 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
            .WithMany(c => c.Permissions)
            .HasForeignKey(p => p.PermissionCategoryId)
            .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<Item>(entity =>
+        {
+            entity.HasOne(itemCategory=>itemCategory.ItemCategory)
+            .WithMany(item=>item.Items)
+            .HasForeignKey(itemCategory=>itemCategory.ItemCategoryId)
+            .OnDelete(DeleteBehavior.Cascade);
         });
 
         builder.Entity<ApplicationUser>(entity =>
