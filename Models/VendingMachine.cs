@@ -19,4 +19,5 @@ public class VendingMachine
 
     public DateTime LastRestock{get;set;}
 
+    public ICollection<VendingItem> VendingItems { get; set; } = new List<VendingItem>();
 }

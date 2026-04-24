@@ -17,4 +17,6 @@ public class Item
     public int ItemCategoryId{get;set;}
 
     public ItemCategory? ItemCategory{get;set;}
+
+    public ICollection<VendingItem> VendingItems { get; set; } = new List<VendingItem>();
 }

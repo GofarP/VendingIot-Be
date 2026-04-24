@@ -15,15 +15,30 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
 
     public DbSet<Permission> Permissions { get; set; }
 
-    public DbSet<ItemCategory>ItemCategories{get;set;}
+    public DbSet<ItemCategory> ItemCategories { get; set; }
 
-    public DbSet<Item> Items {get; set;}
+    public DbSet<Item> Items { get; set; }
 
-    public DbSet<VendingMachine>VendingMachines{get; set;}
+    public DbSet<VendingMachine> VendingMachines { get; set; }
+
+    public DbSet<VendingItem> VendingItems { get; set; }
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
+
+        builder.Entity<VendingItem>(entity =>
+        {
+            entity.HasOne(vi => vi.VendingMachine)
+          .WithMany(vm => vm.VendingItems)
+          .HasForeignKey(vi => vi.VendingMachineId)
+          .OnDelete(DeleteBehavior.Cascade); // Jika mesin dihapus, stoknya ikut terhapus
+
+            entity.HasOne(vi => vi.Item)
+                  .WithMany(i => i.VendingItems)
+                  .HasForeignKey(vi => vi.ItemId)
+                  .OnDelete(DeleteBehavior.Restrict);
+        });
 
         builder.Entity<Permission>(entity =>
         {
@@ -35,9 +50,9 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
 
         builder.Entity<Item>(entity =>
         {
-            entity.HasOne(itemCategory=>itemCategory.ItemCategory)
-            .WithMany(item=>item.Items)
-            .HasForeignKey(itemCategory=>itemCategory.ItemCategoryId)
+            entity.HasOne(itemCategory => itemCategory.ItemCategory)
+            .WithMany(item => item.Items)
+            .HasForeignKey(itemCategory => itemCategory.ItemCategoryId)
             .OnDelete(DeleteBehavior.Cascade);
         });
 

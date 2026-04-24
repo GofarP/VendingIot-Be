@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using VendingIot.Data;
 
@@ -11,9 +12,11 @@ using VendingIot.Data;
 namespace VendingIot.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260424120008_AddVendingTableDbSet")]
+    partial class AddVendingTableDbSet
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -488,26 +491,21 @@ namespace VendingIot.Migrations
 
             modelBuilder.Entity("VendingIot.Models.VendingItem", b =>
                 {
-                    b.HasOne("VendingIot.Models.Item", "Item")
-                        .WithMany("VendingItems")
+                    b.HasOne("VendingIot.Models.Item", "item")
+                        .WithMany()
                         .HasForeignKey("ItemId")
-                        .OnDelete(DeleteBehavior.Restrict)
+                        .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
                     b.HasOne("VendingIot.Models.VendingMachine", "VendingMachine")
-                        .WithMany("VendingItems")
+                        .WithMany()
                         .HasForeignKey("VendingMachineId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
-                    b.Navigation("Item");
-
                     b.Navigation("VendingMachine");
-                });
 
-            modelBuilder.Entity("VendingIot.Models.Item", b =>
-                {
-                    b.Navigation("VendingItems");
+                    b.Navigation("item");
                 });
 
             modelBuilder.Entity("VendingIot.Models.ItemCategory", b =>
@@ -518,11 +516,6 @@ namespace VendingIot.Migrations
             modelBuilder.Entity("VendingIot.Models.PermissionCategory", b =>
                 {
                     b.Navigation("Permissions");
-                });
-
-            modelBuilder.Entity("VendingIot.Models.VendingMachine", b =>
-                {
-                    b.Navigation("VendingItems");
                 });
 #pragma warning restore 612, 618
         }
