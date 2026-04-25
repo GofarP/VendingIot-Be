@@ -99,4 +99,6 @@ app.UseAuthorization();  // 2. Bolehkan kamu masuk? (Cek Atribut [Authorize])
 
 app.MapControllers();
 
+app.UseStaticFiles();
+
 app.Run();
