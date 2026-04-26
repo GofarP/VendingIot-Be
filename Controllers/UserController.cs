@@ -4,23 +4,28 @@ using Microsoft.EntityFrameworkCore;
 using FluentValidation;
 using VendingIot.Models;
 using VendingIot.Models.DTO;
+using Microsoft.AspNetCore.Authorization;
 
 namespace VendingIot.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-
+[Authorize] 
 public class UserController : ControllerBase
 {
     private readonly UserManager<ApplicationUser> _userManager;
     private readonly IValidator<UserCreateDto> _createValidator;
+    private readonly IValidator<UserUpdateDTO> _updateValidator;
 
-    public UserController(UserManager<ApplicationUser> userManager, IValidator<UserCreateDto> createValidator)
+    public UserController(
+        UserManager<ApplicationUser> userManager, 
+        IValidator<UserCreateDto> createValidator, 
+        IValidator<UserUpdateDTO> updateValidator) 
     {
         _userManager = userManager;
         _createValidator = createValidator;
+        _updateValidator = updateValidator;
     }
-
 
     [HttpGet]
     public async Task<IActionResult> GetAll([FromQuery] int page = 1, [FromQuery] int pageSize = 10)
@@ -30,25 +35,24 @@ public class UserController : ControllerBase
 
         var totalCount = await _userManager.Users.CountAsync();
         var users = await _userManager.Users
-        .OrderByDescending(u => u.Id)
-        .Skip((page - 1) * pageSize)
-        .Take(pageSize)
-        .Select(u => new
-        {
-            u.Id,
-            u.FullName,
-            u.Email,
-            u.Photo,
-            PhotoUrl = string.IsNullOrEmpty(u.Photo) ? null : $"/uploads/users/{u.Photo}"
-        })
-        .ToListAsync();
+            .OrderByDescending(u => u.Id)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .Select(u => new
+            {
+                u.Id,
+                u.FullName,
+                u.Email,
+                u.Photo,
+                PhotoUrl = string.IsNullOrEmpty(u.Photo) ? null : $"/uploads/users/{u.Photo}"
+            })
+            .ToListAsync();
 
         return Ok(new
         {
             data = users,
             pagination = new { totalCount, pageSize, currentPage = page }
         });
-
     }
 
     [HttpGet("{id}")]
@@ -72,7 +76,8 @@ public class UserController : ControllerBase
     public async Task<IActionResult> Create([FromForm] UserCreateDto dto)
     {
         var validationResult = await _createValidator.ValidateAsync(dto);
-        if (!validationResult.IsValid) return BadRequest(new { errors = validationResult.ToDictionary() });
+        if (!validationResult.IsValid) 
+            return BadRequest(new { errors = validationResult.ToDictionary() });
 
         var user = new ApplicationUser
         {
@@ -84,10 +89,9 @@ public class UserController : ControllerBase
         if (dto.PhotoFile != null) user.Photo = await SaveFile(dto.PhotoFile);
 
         var result = await _userManager.CreateAsync(user, dto.Password);
-        if (!result.Succeeded) return BadRequest(result.Errors);
+        if (!result.Succeeded) return BadRequest(new { errors = result.Errors.Select(e => e.Description) });
 
         return CreatedAtAction(nameof(GetById), new { id = user.Id }, new { message = "User berhasil dibuat", data = user });
-
     }
 
     [HttpPut("{id}")]
@@ -95,10 +99,13 @@ public class UserController : ControllerBase
     public async Task<IActionResult> Update(string id, [FromForm] UserUpdateDTO dto)
     {
         var user = await _userManager.FindByIdAsync(id);
-        if (user == null) return NotFound();
-        var validator = new UserUpdateValidator(_userManager, id);
+        if (user == null) return NotFound(new { message = "User tidak ditemukan" });
 
-        var validationResult = await validator.ValidateAsync(dto);
+        dto.Id = id;
+
+        var validationResult = await _updateValidator.ValidateAsync(dto);
+        if (!validationResult.IsValid) 
+            return BadRequest(new { errors = validationResult.ToDictionary() });
 
         user.FullName = dto.FullName;
         user.Email = dto.Email;
@@ -117,8 +124,9 @@ public class UserController : ControllerBase
         }
 
         var result = await _userManager.UpdateAsync(user);
-        return result.Succeeded ? Ok(new { message = "User diperbarui", data = user }) : BadRequest(result.Errors);
+        if (!result.Succeeded) return BadRequest(new { errors = result.Errors.Select(e => e.Description) });
 
+        return Ok(new { message = "User diperbarui", data = user });
     }
 
     [HttpDelete("{id}")]
@@ -142,8 +150,11 @@ public class UserController : ControllerBase
     {
         var path = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot/uploads/users");
         if (!Directory.Exists(path)) Directory.CreateDirectory(path);
+        
         var fileName = Guid.NewGuid() + Path.GetExtension(file.FileName);
-        using var stream = new FileStream(Path.Combine(path, fileName), FileMode.Create);
+        var fullPath = Path.Combine(path, fileName);
+        
+        using var stream = new FileStream(fullPath, FileMode.Create);
         await file.CopyToAsync(stream);
         return fileName;
     }
@@ -153,6 +164,4 @@ public class UserController : ControllerBase
         var path = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot/uploads/users", fileName);
         if (System.IO.File.Exists(path)) System.IO.File.Delete(path);
     }
-
-
 }
