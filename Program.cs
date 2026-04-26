@@ -33,6 +33,14 @@ builder.Services.AddAuthentication(options =>
 {
     options.RequireHttpsMetadata = false;
     options.SaveToken = true;
+    options.Events = new JwtBearerEvents
+    {
+        OnMessageReceived = context =>
+         {
+             context.Token = context.Request.Cookies["vending_token"];
+             return Task.CompletedTask;
+         }
+    };
     options.TokenValidationParameters = new TokenValidationParameters
     {
         ValidateIssuer = true,
@@ -67,9 +75,9 @@ builder.Services.AddAuthorization();
 // 4. CORS
 builder.Services.AddCors(options =>
 {
-    options.AddDefaultPolicy(policy =>
+    options.AddPolicy("VendingIotFe", policy =>
     {
-        policy.WithOrigins("http://localhost:5173")
+        policy.WithOrigins("http://localhost:3000") // Izinkan hanya frontend kamu
               .AllowAnyHeader()
               .AllowAnyMethod()
               .AllowCredentials();
@@ -81,10 +89,10 @@ builder.Services.AddOpenApi();
 
 var app = builder.Build();
 
-// Jalankan Seeder
+app.UseCors("VendingIotFe");
+
 await DbInitializer.Seed(app.Services);
 
-// 5. MIDDLEWARE PIPELINE (URUTAN SANGAT PENTING)
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();
@@ -93,9 +101,8 @@ if (app.Environment.IsDevelopment())
 app.UseCors();
 // app.UseHttpsRedirection();
 
-// Urutan ini tidak boleh terbalik!
-app.UseAuthentication(); // 1. Siapa kamu? (Membaca JWT)
-app.UseAuthorization();  // 2. Bolehkan kamu masuk? (Cek Atribut [Authorize])
+app.UseAuthentication();
+app.UseAuthorization();
 
 app.MapControllers();
 

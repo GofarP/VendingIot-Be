@@ -16,18 +16,22 @@ namespace VendingIot.Controllers;
 public class AuthController : ControllerBase
 {
     private readonly UserManager<ApplicationUser> _userManager;
+
+    private readonly RoleManager<IdentityRole> _roleManager;
     private readonly IConfiguration _config;
-    
+
     private readonly IValidator<LoginDTO> _loginValidator;
     private readonly IValidator<RegisterDTO> _registerValidator;
 
     public AuthController(
-        UserManager<ApplicationUser> userManager, 
+        UserManager<ApplicationUser> userManager,
+        RoleManager<IdentityRole> roleManager,
         IConfiguration config,
         IValidator<LoginDTO> loginValidator,
         IValidator<RegisterDTO> registerValidator)
     {
         _userManager = userManager;
+        _roleManager = roleManager;
         _config = config;
         _loginValidator = loginValidator;
         _registerValidator = registerValidator;
@@ -60,10 +64,10 @@ public class AuthController : ControllerBase
 
         if (!result.Succeeded)
         {
-            return StatusCode(500, new 
-            { 
-                message = "Gagal membuat akun.", 
-                errors = result.Errors.Select(e => e.Description) 
+            return StatusCode(500, new
+            {
+                message = "Gagal membuat akun.",
+                errors = result.Errors.Select(e => e.Description)
             });
         }
 
@@ -74,29 +78,31 @@ public class AuthController : ControllerBase
     }
 
     [HttpPost("login")]
+
     public async Task<IActionResult> Login([FromBody] LoginDTO model)
     {
         try
         {
-            var validationResult = await _loginValidator.ValidateAsync(model);
-            if (!validationResult.IsValid)
+            var validation = await _loginValidator.ValidateAsync(model);
+            if (!validation.IsValid)
             {
                 return BadRequest(new
                 {
-                    message = "Validation failed",
-                    errors = validationResult.Errors
-                        .GroupBy(e => e.PropertyName)
-                        .ToDictionary(g => g.Key, g => g.Select(e => e.ErrorMessage).ToArray())
+                    message = "Validation Failed",
+                    errors = validation.Errors
+                    .GroupBy(e => e.PropertyName)
+                    .ToDictionary(g => g.Key, g => g.Select(e => e.ErrorMessage).ToArray())
                 });
             }
 
             var user = await _userManager.FindByEmailAsync(model.Email);
-            if (user == null) return Unauthorized(new { message = "Incorrect email or password" });
-
-            var isPasswordValid = await _userManager.CheckPasswordAsync(user, model.Password);
-            if (!isPasswordValid) return Unauthorized(new { message = "Incorrect email or password" });
+            if (user == null || !await _userManager.CheckPasswordAsync(user, model.Password))
+            {
+                return Unauthorized(new { message = "Incorrect email or password" });
+            }
 
             var roles = await _userManager.GetRolesAsync(user);
+            var permissions = new List<string>();
             var authClaims = new List<Claim>
             {
                 new Claim(ClaimTypes.NameIdentifier, user.Id),
@@ -104,57 +110,72 @@ public class AuthController : ControllerBase
                 new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
             };
 
-            foreach (var role in roles)
+            foreach (var roleName in roles)
             {
-                authClaims.Add(new Claim(ClaimTypes.Role, role));
+                authClaims.Add(new Claim(ClaimTypes.Role, roleName));
+                var role = await _roleManager.FindByNameAsync(roleName);
+                if (role != null)
+                {
+                    var roleClaims = await _roleManager.GetClaimsAsync(role);
+                    foreach (var claim in roleClaims)
+                    {
+                        authClaims.Add(claim);
+                        permissions.Add(claim.Value);
+                    }
+                }
             }
 
-            var durationInMinutes = _config.GetValue<int>("Jwt:DurationInMinutes", 60);
-            var jwtKey = _config["Jwt:Key"];
-
-            if (string.IsNullOrEmpty(jwtKey)) throw new Exception("JWT Key is not configured.");
-
+            var jwtKey = _config["Jwt:Key"] ?? throw new Exception("JWT Key is not configured.");
+            var duration = _config.GetValue<int>("Jwt:DurationInMinutes", 60);
+            var expiration = DateTime.UtcNow.AddMinutes(duration);
             var authSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey));
 
             var token = new JwtSecurityToken(
                 issuer: _config["Jwt:Issuer"],
                 audience: _config["Jwt:Audience"],
-                expires: DateTime.Now.AddMinutes(durationInMinutes),
+                expires: expiration,
                 claims: authClaims,
                 signingCredentials: new SigningCredentials(authSigningKey, SecurityAlgorithms.HmacSha256)
+
             );
 
             var jwtString = new JwtSecurityTokenHandler().WriteToken(token);
+            Response.Cookies.Append("vending_token", jwtString, new CookieOptions
+            {
+                HttpOnly = true,
+                Secure = false,
+                SameSite = SameSiteMode.Lax,
+                Expires = DateTime.UtcNow.AddDays(7),
+                Path = "/"
+            });
 
             return Ok(new
             {
-                tokenType = "Bearer",
-                accessToken = jwtString,
-                expiresIn = durationInMinutes * 60,
                 email = user.Email,
                 fullName = user.FullName,
-                roles = roles
+                roles = roles,
+                permissions = permissions.Distinct().ToList(),
+                expiresIn = duration * 60
             });
+
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[Login Error] {DateTime.Now}: {ex.Message}");
-            return StatusCode(StatusCodes.Status500InternalServerError, new { message = "An error occurred during the login process." });
+            return StatusCode(StatusCodes.Status500InternalServerError, new { message = "An internal error occurred." });
+
         }
     }
 
     [HttpPost("logout")]
-    [Authorize]
     public async Task<IActionResult> Logout()
     {
-        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
-        if (userId == null) return Unauthorized(new { message = "Sesi Tidak Valid" });
-
-        var user = await _userManager.FindByIdAsync(userId);
-        if (user == null) return Ok(new { message = "Logged out (user not found)." });
-
-        var result = await _userManager.UpdateAsync(user);
-        if (!result.Succeeded) return BadRequest(new { message = "Gagal mengupdate status logout." });
+        Response.Cookies.Delete("vending_token", new CookieOptions
+        {
+            HttpOnly = true,
+            Secure = false,
+            SameSite = SameSiteMode.Lax,
+            Path = "/"
+        });
 
         return Ok(new { message = "Berhasil Logout" });
     }
@@ -163,7 +184,6 @@ public class AuthController : ControllerBase
     [Authorize]
     public async Task<IActionResult> GetCurrentUser()
     {
-        // ... (Kode GetCurrentUser sama seperti sebelumnya)
         var user = await _userManager.GetUserAsync(User);
         if (user == null) return NotFound();
 
