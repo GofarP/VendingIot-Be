@@ -10,7 +10,7 @@ namespace VendingIot.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[Authorize] 
+[Authorize]
 public class UserController : ControllerBase
 {
     private readonly UserManager<ApplicationUser> _userManager;
@@ -18,9 +18,9 @@ public class UserController : ControllerBase
     private readonly IValidator<UserUpdateDTO> _updateValidator;
 
     public UserController(
-        UserManager<ApplicationUser> userManager, 
-        IValidator<UserCreateDto> createValidator, 
-        IValidator<UserUpdateDTO> updateValidator) 
+        UserManager<ApplicationUser> userManager,
+        IValidator<UserCreateDto> createValidator,
+        IValidator<UserUpdateDTO> updateValidator)
     {
         _userManager = userManager;
         _createValidator = createValidator;
@@ -28,31 +28,51 @@ public class UserController : ControllerBase
     }
 
     [HttpGet]
-    public async Task<IActionResult> GetAll([FromQuery] int page = 1, [FromQuery] int pageSize = 10)
+    public async Task<IActionResult> GetAll([FromQuery] int page = 1, [FromQuery] int pageSize = 10, [FromQuery] string? search = null)
     {
-        page = page < 1 ? 1 : page;
-        pageSize = pageSize < 1 ? 10 : pageSize;
-
-        var totalCount = await _userManager.Users.CountAsync();
-        var users = await _userManager.Users
-            .OrderByDescending(u => u.Id)
-            .Skip((page - 1) * pageSize)
-            .Take(pageSize)
-            .Select(u => new
-            {
-                u.Id,
-                u.FullName,
-                u.Email,
-                u.Photo,
-                PhotoUrl = string.IsNullOrEmpty(u.Photo) ? null : $"/uploads/users/{u.Photo}"
-            })
-            .ToListAsync();
-
-        return Ok(new
+        try
         {
-            data = users,
-            pagination = new { totalCount, pageSize, currentPage = page }
-        });
+            page = page < 1 ? 1 : page;
+            pageSize = pageSize < 1 ? 10 : pageSize;
+
+            var query = _userManager.Users.AsQueryable();
+
+            if (!string.IsNullOrEmpty(search))
+            {
+                query = query.Where(u => u.FullName.Contains(search) || u.Email.Contains(search));
+            }
+
+            var totalCount = await query.CountAsync();
+            var users = await query
+                .OrderByDescending(u => u.Id)
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .Select(u => new
+                {
+                    u.Id,
+                    u.FullName,
+                    u.Email,
+                    u.Photo,
+                    PhotoUrl = string.IsNullOrEmpty(u.Photo) ? null : $"/uploads/users/{u.Photo}"
+                })
+                .ToListAsync();
+
+            return Ok(new
+            {
+                data = users,
+                pagination = new
+                {
+                    totalCount,
+                    pageSize,
+                    currentPage = page,
+                    totalPages = (int)Math.Ceiling(totalCount / (double)pageSize)
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { message = "Internal Server Error", error = ex.Message });
+        }
     }
 
     [HttpGet("{id}")]
@@ -76,7 +96,7 @@ public class UserController : ControllerBase
     public async Task<IActionResult> Create([FromForm] UserCreateDto dto)
     {
         var validationResult = await _createValidator.ValidateAsync(dto);
-        if (!validationResult.IsValid) 
+        if (!validationResult.IsValid)
             return BadRequest(new { errors = validationResult.ToDictionary() });
 
         var user = new ApplicationUser
@@ -104,7 +124,7 @@ public class UserController : ControllerBase
         dto.Id = id;
 
         var validationResult = await _updateValidator.ValidateAsync(dto);
-        if (!validationResult.IsValid) 
+        if (!validationResult.IsValid)
             return BadRequest(new { errors = validationResult.ToDictionary() });
 
         user.FullName = dto.FullName;
@@ -150,10 +170,10 @@ public class UserController : ControllerBase
     {
         var path = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot/uploads/users");
         if (!Directory.Exists(path)) Directory.CreateDirectory(path);
-        
+
         var fileName = Guid.NewGuid() + Path.GetExtension(file.FileName);
         var fullPath = Path.Combine(path, fileName);
-        
+
         using var stream = new FileStream(fullPath, FileMode.Create);
         await file.CopyToAsync(stream);
         return fileName;

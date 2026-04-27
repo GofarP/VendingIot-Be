@@ -22,14 +22,23 @@ namespace VendingIot.Controllers
         }
 
         [HttpGet]
-        public async Task<IActionResult> GetPermissionCategories([FromQuery] int page = 1, [FromQuery] int pageSize = 10)
+        public async Task<IActionResult> GetPermissionCategories([FromQuery] int page = 1, [FromQuery] int pageSize = 10, [FromQuery] string? search = null)
         {
             try
             {
                 page = page < 1 ? 1 : page;
                 pageSize = pageSize < 1 ? 10 : pageSize;
-                var totalCount = await _context.PermissionCategories.CountAsync();
-                var permissionCategories = await _context.PermissionCategories
+
+                var query = _context.PermissionCategories.AsQueryable();
+
+                if (!string.IsNullOrEmpty(search))
+                {
+                    query = query.Where(x => x.Name.Contains(search));
+                }
+
+                var totalCount = await query.CountAsync();
+                var permissionCategories = await query
+                    .OrderByDescending(x => x.Id)
                     .Skip((page - 1) * pageSize)
                     .Take(pageSize)
                     .ToListAsync();

@@ -151,6 +151,7 @@ public class AuthController : ControllerBase
 
             return Ok(new
             {
+                token = jwtString,
                 email = user.Email,
                 fullName = user.FullName,
                 roles = roles,

@@ -22,15 +22,23 @@ namespace VendingIot.Controllers
         }
 
         [HttpGet]
-        public async Task<IActionResult> GetItem([FromQuery] int page = 1, [FromQuery] int pageSize = 10)
+        public async Task<IActionResult> GetItem([FromQuery] int page = 1, [FromQuery] int pageSize = 10, [FromQuery] string? search = null)
         {
             try
             {
                 page = page < 1 ? 1 : page;
                 pageSize = pageSize < 1 ? 10 : pageSize;
 
-                var totalCount = await _context.Items.CountAsync();
-                var items = await _context.Items
+                var query = _context.Items.Include(i => i.ItemCategory).AsQueryable();
+
+                if (!string.IsNullOrEmpty(search))
+                {
+                    query = query.Where(i => i.Name.Contains(search));
+                }
+
+                var totalCount = await query.CountAsync();
+                var items = await query
+                    .OrderByDescending(i => i.Id)
                     .Skip((page - 1) * pageSize)
                     .Take(pageSize)
                     .ToListAsync();

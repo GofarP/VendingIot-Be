@@ -23,15 +23,23 @@ namespace VendingIot.Controllers
         }
 
         [HttpGet]
-        public async Task<IActionResult> GetDepartments([FromQuery] int page = 1, [FromQuery] int pageSize = 10)
+        public async Task<IActionResult> GetDepartments([FromQuery] int page = 1, [FromQuery] int pageSize = 10, [FromQuery] string? search = null)
         {
             try
             {
                 page = page < 1 ? 1 : page;
                 pageSize = pageSize < 1 ? 10 : pageSize;
 
-                var totalCount = await _context.Departments.CountAsync();
-                var departments = await _context.Departments
+                var query = _context.Departments.AsQueryable();
+
+                if (!string.IsNullOrEmpty(search))
+                {
+                    query = query.Where(d => d.Name.Contains((search)));
+                }
+
+                var totalCount = await query.CountAsync();
+                var departments = await query
+                    .OrderByDescending(d => d.Id)
                     .Skip((page - 1) * pageSize)
                     .Take(pageSize)
                     .ToListAsync();
@@ -48,6 +56,7 @@ namespace VendingIot.Controllers
                     }
                 });
             }
+
             catch (Exception ex)
             {
                 return StatusCode(500, new { message = "Internal Server Error", error = ex.Message });
