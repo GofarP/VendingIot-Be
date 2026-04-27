@@ -33,8 +33,10 @@ namespace VendingIot.Controllers
                 var query = _context.Departments.AsQueryable();
 
                 if (!string.IsNullOrEmpty(search))
-                {
-                    query = query.Where(d => d.Name.Contains((search)));
+                {   
+                    query = query.Where(d =>
+                    d.Name.Contains(search) ||
+                    (d.Description != null && d.Description.Contains(search)));
                 }
 
                 var totalCount = await query.CountAsync();
@@ -116,7 +118,7 @@ namespace VendingIot.Controllers
         {
             if (id != department.Id)
             {
-                return BadRequest(new { message = "ID di URL dan data tidak cocok." });
+                return BadRequest(new { message = "ID di URL dan data tidak cocok. id:"+department });
             }
 
             var validationResult = await _validator.ValidateAsync(department);
