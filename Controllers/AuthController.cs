@@ -116,11 +116,11 @@ public class AuthController : ControllerBase
             var roles = await _userManager.GetRolesAsync(user);
             var permissions = new List<string>();
             var authClaims = new List<Claim>
-        {
-            new Claim(ClaimTypes.NameIdentifier, user.Id),
-            new Claim(ClaimTypes.Email, user.Email!),
-            new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
-        };
+            {
+                new Claim(ClaimTypes.NameIdentifier, user.Id),
+                new Claim(ClaimTypes.Email, user.Email!),
+                new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
+            };
 
             foreach (var roleName in roles)
             {
@@ -137,7 +137,6 @@ public class AuthController : ControllerBase
                 }
             }
 
-
             var jwtKey = _config["Jwt:Key"] ?? throw new Exception("JWT Key is not configured.");
             var duration = _config.GetValue<int>("Jwt:DurationInMinutes", 15);
             var expiration = DateTime.UtcNow.AddMinutes(duration);
@@ -153,11 +152,14 @@ public class AuthController : ControllerBase
 
             var jwtString = new JwtSecurityTokenHandler().WriteToken(token);
 
-            var refreshTokenString = _tokenHelper.Generate();
+
+            var plainRefreshToken = _tokenHelper.Generate();
+
+            var hashedRefreshToken = _tokenHelper.HashToken(plainRefreshToken);
 
             var refreshTokenEntry = new RefreshToken
             {
-                Token = refreshTokenString,
+                Token = hashedRefreshToken, // <-- Simpan hasil gilingan
                 UserId = user.Id,
                 ExpiryDate = DateTime.UtcNow.AddDays(7),
                 Created = DateTime.UtcNow,
@@ -170,7 +172,7 @@ public class AuthController : ControllerBase
             return Ok(new
             {
                 token = jwtString,
-                refreshToken = refreshTokenString,
+                refreshToken = plainRefreshToken,
                 email = user.Email,
                 fullName = user.FullName,
                 roles = roles,
@@ -184,7 +186,6 @@ public class AuthController : ControllerBase
             return StatusCode(StatusCodes.Status500InternalServerError, new { message = "An internal error occurred." });
         }
     }
-
     [HttpPost("logout")]
     public async Task<IActionResult> Logout([FromBody] LogoutRequestDTO model)
     {
@@ -193,33 +194,28 @@ public class AuthController : ControllerBase
             return BadRequest(new { message = "Token is required" });
         }
 
-        // Gunakan SingleOrDefaultAsync agar lebih spesifik
+        // --- LANGKAH PENTING: Giling dulu input dari user ---
+        var hashedInput = _tokenHelper.HashToken(model.RefreshToken);
+
+        // Cari pakai hasil gilingannya
         var refreshToken = await _context.RefreshTokens
-            .Where(x => x.Token == model.RefreshToken)
+            .Where(x => x.Token == hashedInput) // <-- Bandingkan Gilingan vs Gilingan
             .FirstOrDefaultAsync();
 
         if (refreshToken == null)
         {
-            // Jika tidak ketemu, jangan diam saja. Kasih log atau return error untuk debug
             return NotFound(new { message = "Refresh token not found in database" });
         }
 
-        // Pastikan statusnya memang belum di-revoke
+        // Kalau ketemu, matikan tokennya
         refreshToken.IsRevoked = true;
         refreshToken.Revoked = DateTime.UtcNow;
         refreshToken.RevokedByIp = HttpContext.Connection.RemoteIpAddress?.ToString();
 
-        // PAKSA simpan perubahan
-        var result = await _context.SaveChangesAsync();
+        await _context.SaveChangesAsync();
 
-        if (result > 0)
-        {
-            return Ok(new { message = "Logged out and token revoked" });
-        }
-
-        return StatusCode(500, "Failed to update database");
+        return Ok(new { message = "Logged out and token revoked" });
     }
-
 
     [HttpGet("me")]
     [Authorize]
@@ -251,9 +247,10 @@ public class AuthController : ControllerBase
                 return Unauthorized(new { message = "Invalid Access Token" });
             }
 
-            // C. Cari Refresh Token di database
+            var hashedInputToken = _tokenHelper.HashToken(model.RefreshToken);
+
             var savedRefreshToken = await _context.RefreshTokens
-                .FirstOrDefaultAsync(x => x.Token == model.RefreshToken && x.UserId == userId);
+                .FirstOrDefaultAsync(x => x.Token == hashedInputToken && x.UserId == userId);
 
             if (savedRefreshToken == null || !savedRefreshToken.IsActive)
             {
@@ -265,8 +262,8 @@ public class AuthController : ControllerBase
             {
                 return Unauthorized(new { message = "User not found" });
             }
-            var roles = await _userManager.GetRolesAsync(user);
 
+            var roles = await _userManager.GetRolesAsync(user);
             var authClaims = new List<Claim>
         {
             new Claim(ClaimTypes.NameIdentifier, user.Id),
@@ -302,10 +299,12 @@ public class AuthController : ControllerBase
 
             savedRefreshToken.Revoked = DateTime.UtcNow;
 
-            var newRefreshTokenString = _tokenHelper.Generate();
+            var newPlainRefreshToken = _tokenHelper.Generate();
+            var newHashedRefreshToken = _tokenHelper.HashToken(newPlainRefreshToken);
+
             var newRefreshTokenEntry = new RefreshToken
             {
-                Token = newRefreshTokenString,
+                Token = newHashedRefreshToken,
                 UserId = user.Id,
                 ExpiryDate = DateTime.UtcNow.AddDays(7),
                 Created = DateTime.UtcNow,
@@ -318,7 +317,7 @@ public class AuthController : ControllerBase
             return Ok(new
             {
                 token = newJwtString,
-                refreshToken = newRefreshTokenString,
+                refreshToken = newPlainRefreshToken,
                 expiresIn = duration * 60
             });
         }
