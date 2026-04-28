@@ -1,7 +1,7 @@
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using VendingIot.Models;
-using VendingIoT.API.Models;
+using VendingIoT.Models;
 namespace VendingIot.Data;
 
 public class ApplicationDbContext : IdentityDbContext<ApplicationUser>

@@ -157,7 +157,7 @@ namespace VendingIot.Migrations
                     b.ToTable("AspNetUserTokens", (string)null);
                 });
 
-            modelBuilder.Entity("VendingIoT.API.Models.RefreshToken", b =>
+            modelBuilder.Entity("VendingIoT.Models.RefreshToken", b =>
                 {
                     b.Property<int>("Id")
                         .ValueGeneratedOnAdd()
@@ -508,7 +508,7 @@ namespace VendingIot.Migrations
                         .IsRequired();
                 });
 
-            modelBuilder.Entity("VendingIoT.API.Models.RefreshToken", b =>
+            modelBuilder.Entity("VendingIoT.Models.RefreshToken", b =>
                 {
                     b.HasOne("VendingIot.Models.ApplicationUser", "User")
                         .WithMany()

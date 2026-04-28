@@ -9,7 +9,7 @@ using System.Security.Claims;
 using System.Text;
 using FluentValidation;
 using VendingIot.Helpers;
-using VendingIoT.API.Models;
+using VendingIoT.Models;
 using VendingIot.Data;
 using VendingIoT.Helpers;
 using Microsoft.EntityFrameworkCore;
