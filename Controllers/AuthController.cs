@@ -13,6 +13,7 @@ using VendingIoT.Models;
 using VendingIot.Data;
 using VendingIoT.Helpers;
 using Microsoft.EntityFrameworkCore;
+using VendingIoT.DTOs;
 
 namespace VendingIot.Controllers;
 
@@ -174,7 +175,7 @@ public class AuthController : ControllerBase
                 fullName = user.FullName,
                 roles = roles,
                 permissions = permissions.Distinct().ToList(),
-                expiresIn = duration * 60 
+                expiresIn = duration * 60
             });
 
         }
@@ -185,18 +186,40 @@ public class AuthController : ControllerBase
     }
 
     [HttpPost("logout")]
-    public async Task<IActionResult> Logout()
+    public async Task<IActionResult> Logout([FromBody] LogoutRequestDTO model)
     {
-        Response.Cookies.Delete("vending_token", new CookieOptions
+        if (model == null || string.IsNullOrEmpty(model.RefreshToken))
         {
-            HttpOnly = true,
-            Secure = false,
-            SameSite = SameSiteMode.Lax,
-            Path = "/"
-        });
+            return BadRequest(new { message = "Token is required" });
+        }
 
-        return Ok(new { message = "Berhasil Logout" });
+        // Gunakan SingleOrDefaultAsync agar lebih spesifik
+        var refreshToken = await _context.RefreshTokens
+            .Where(x => x.Token == model.RefreshToken)
+            .FirstOrDefaultAsync();
+
+        if (refreshToken == null)
+        {
+            // Jika tidak ketemu, jangan diam saja. Kasih log atau return error untuk debug
+            return NotFound(new { message = "Refresh token not found in database" });
+        }
+
+        // Pastikan statusnya memang belum di-revoke
+        refreshToken.IsRevoked = true;
+        refreshToken.Revoked = DateTime.UtcNow;
+        refreshToken.RevokedByIp = HttpContext.Connection.RemoteIpAddress?.ToString();
+
+        // PAKSA simpan perubahan
+        var result = await _context.SaveChangesAsync();
+
+        if (result > 0)
+        {
+            return Ok(new { message = "Logged out and token revoked" });
+        }
+
+        return StatusCode(500, "Failed to update database");
     }
+
 
     [HttpGet("me")]
     [Authorize]
