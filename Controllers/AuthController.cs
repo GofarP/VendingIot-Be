@@ -90,7 +90,6 @@ public class AuthController : ControllerBase
     }
 
     [HttpPost("login")]
-
     public async Task<IActionResult> Login([FromBody] LoginDTO model)
     {
         try
@@ -102,8 +101,8 @@ public class AuthController : ControllerBase
                 {
                     message = "Validation Failed",
                     errors = validation.Errors
-                    .GroupBy(e => e.PropertyName)
-                    .ToDictionary(g => g.Key, g => g.Select(e => e.ErrorMessage).ToArray())
+                        .GroupBy(e => e.PropertyName)
+                        .ToDictionary(g => g.Key, g => g.Select(e => e.ErrorMessage).ToArray())
                 });
             }
 
@@ -116,11 +115,11 @@ public class AuthController : ControllerBase
             var roles = await _userManager.GetRolesAsync(user);
             var permissions = new List<string>();
             var authClaims = new List<Claim>
-            {
-                new Claim(ClaimTypes.NameIdentifier, user.Id),
-                new Claim(ClaimTypes.Email, user.Email!),
-                new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
-            };
+        {
+            new Claim(ClaimTypes.NameIdentifier, user.Id),
+            new Claim(ClaimTypes.Email, user.Email!),
+            new Claim(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
+        };
 
             foreach (var roleName in roles)
             {
@@ -137,6 +136,7 @@ public class AuthController : ControllerBase
                 }
             }
 
+
             var jwtKey = _config["Jwt:Key"] ?? throw new Exception("JWT Key is not configured.");
             var duration = _config.GetValue<int>("Jwt:DurationInMinutes", 15);
             var expiration = DateTime.UtcNow.AddMinutes(duration);
@@ -148,7 +148,6 @@ public class AuthController : ControllerBase
                 expires: expiration,
                 claims: authClaims,
                 signingCredentials: new SigningCredentials(authSigningKey, SecurityAlgorithms.HmacSha256)
-
             );
 
             var jwtString = new JwtSecurityTokenHandler().WriteToken(token);
@@ -160,20 +159,12 @@ public class AuthController : ControllerBase
                 Token = refreshTokenString,
                 UserId = user.Id,
                 ExpiryDate = DateTime.UtcNow.AddDays(7),
+                Created = DateTime.UtcNow,
                 CreatedByIp = HttpContext.Connection.RemoteIpAddress?.ToString()
             };
 
             _context.RefreshTokens.Add(refreshTokenEntry);
             await _context.SaveChangesAsync();
-
-            Response.Cookies.Append("vending_token", jwtString, new CookieOptions
-            {
-                HttpOnly = true,
-                Secure = false,
-                SameSite = SameSiteMode.Lax,
-                Expires = expiration,
-                Path = "/"
-            });
 
             return Ok(new
             {
@@ -183,14 +174,13 @@ public class AuthController : ControllerBase
                 fullName = user.FullName,
                 roles = roles,
                 permissions = permissions.Distinct().ToList(),
-                expiresIn = duration * 60
+                expiresIn = duration * 60 
             });
 
         }
         catch (Exception ex)
         {
             return StatusCode(StatusCodes.Status500InternalServerError, new { message = "An internal error occurred." });
-
         }
     }
 
