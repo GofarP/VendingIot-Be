@@ -5,13 +5,18 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 using System.Text;
 using VendingIot.Data;
+using VendingIot.Helpers;
 using VendingIot.Models;
 using VendingIot.Validators;
+using VendingIoT.Helpers;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // 1. SERVICES CONFIGURATION
 builder.Services.AddValidatorsFromAssemblyContaining<DepartmentValidator>();
+
+// Register this for refresh token
+builder.Services.AddScoped<ITokenHelper, TokenHelper>();
 
 // Database Configuration (MySQL)
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");

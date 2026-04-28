@@ -8,6 +8,11 @@ using System.IdentityModel.Tokens.Jwt;
 using System.Security.Claims;
 using System.Text;
 using FluentValidation;
+using VendingIot.Helpers;
+using VendingIoT.API.Models;
+using VendingIot.Data;
+using VendingIoT.Helpers;
+using Microsoft.EntityFrameworkCore;
 
 namespace VendingIot.Controllers;
 
@@ -22,19 +27,26 @@ public class AuthController : ControllerBase
 
     private readonly IValidator<LoginDTO> _loginValidator;
     private readonly IValidator<RegisterDTO> _registerValidator;
+    private readonly ITokenHelper _tokenHelper;
+
+    private readonly ApplicationDbContext _context;
 
     public AuthController(
+        ApplicationDbContext context,
         UserManager<ApplicationUser> userManager,
         RoleManager<IdentityRole> roleManager,
         IConfiguration config,
         IValidator<LoginDTO> loginValidator,
-        IValidator<RegisterDTO> registerValidator)
+        IValidator<RegisterDTO> registerValidator,
+        ITokenHelper tokenHelper)
     {
         _userManager = userManager;
         _roleManager = roleManager;
         _config = config;
         _loginValidator = loginValidator;
         _registerValidator = registerValidator;
+        _tokenHelper = tokenHelper;
+        _context = context;
     }
 
     [HttpPost("register")]
@@ -126,7 +138,7 @@ public class AuthController : ControllerBase
             }
 
             var jwtKey = _config["Jwt:Key"] ?? throw new Exception("JWT Key is not configured.");
-            var duration = _config.GetValue<int>("Jwt:DurationInMinutes", 60);
+            var duration = _config.GetValue<int>("Jwt:DurationInMinutes", 15);
             var expiration = DateTime.UtcNow.AddMinutes(duration);
             var authSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey));
 
@@ -140,18 +152,33 @@ public class AuthController : ControllerBase
             );
 
             var jwtString = new JwtSecurityTokenHandler().WriteToken(token);
+
+            var refreshTokenString = _tokenHelper.Generate();
+
+            var refreshTokenEntry = new RefreshToken
+            {
+                Token = refreshTokenString,
+                UserId = user.Id,
+                ExpiryDate = DateTime.UtcNow.AddDays(7),
+                CreatedByIp = HttpContext.Connection.RemoteIpAddress?.ToString()
+            };
+
+            _context.RefreshTokens.Add(refreshTokenEntry);
+            await _context.SaveChangesAsync();
+
             Response.Cookies.Append("vending_token", jwtString, new CookieOptions
             {
                 HttpOnly = true,
                 Secure = false,
                 SameSite = SameSiteMode.Lax,
-                Expires = DateTime.UtcNow.AddDays(7),
+                Expires = expiration,
                 Path = "/"
             });
 
             return Ok(new
             {
                 token = jwtString,
+                refreshToken = refreshTokenString,
                 email = user.Email,
                 fullName = user.FullName,
                 roles = roles,
@@ -191,5 +218,100 @@ public class AuthController : ControllerBase
         var roles = await _userManager.GetRolesAsync(user);
 
         return Ok(new { email = user.Email, fullName = user.FullName, roles = roles });
+    }
+
+    [HttpPost("refresh")]
+    public async Task<IActionResult> Refresh([FromBody] TokenRequestDTO model)
+    {
+        if (model == null || string.IsNullOrEmpty(model.AccessToken) || string.IsNullOrEmpty(model.RefreshToken))
+        {
+            return BadRequest(new { message = "Invalid client request" });
+        }
+
+        try
+        {
+            var principal = _tokenHelper.GetPrincipalFromExpiredToken(model.AccessToken);
+            var userId = principal.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+
+            if (string.IsNullOrEmpty(userId))
+            {
+                return Unauthorized(new { message = "Invalid Access Token" });
+            }
+
+            // C. Cari Refresh Token di database
+            var savedRefreshToken = await _context.RefreshTokens
+                .FirstOrDefaultAsync(x => x.Token == model.RefreshToken && x.UserId == userId);
+
+            if (savedRefreshToken == null || !savedRefreshToken.IsActive)
+            {
+                return Unauthorized(new { message = "Refresh token is invalid or has expired" });
+            }
+
+            var user = await _userManager.FindByIdAsync(userId);
+            if (user == null)
+            {
+                return Unauthorized(new { message = "User not found" });
+            }
+            var roles = await _userManager.GetRolesAsync(user);
+
+            var authClaims = new List<Claim>
+        {
+            new Claim(ClaimTypes.NameIdentifier, user.Id),
+            new Claim(ClaimTypes.Email, user.Email!),
+            new Claim(Microsoft.IdentityModel.JsonWebTokens.JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
+        };
+
+            foreach (var roleName in roles)
+            {
+                authClaims.Add(new Claim(ClaimTypes.Role, roleName));
+                var role = await _roleManager.FindByNameAsync(roleName);
+                if (role != null)
+                {
+                    var roleClaims = await _roleManager.GetClaimsAsync(role);
+                    foreach (var claim in roleClaims) { authClaims.Add(claim); }
+                }
+            }
+
+            var jwtKey = _config["Jwt:Key"];
+            var duration = _config.GetValue<int>("Jwt:DurationInMinutes", 15);
+            var expiration = DateTime.UtcNow.AddMinutes(duration);
+            var authSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey!));
+
+            var newToken = new JwtSecurityToken(
+                issuer: _config["Jwt:Issuer"],
+                audience: _config["Jwt:Audience"],
+                expires: expiration,
+                claims: authClaims,
+                signingCredentials: new SigningCredentials(authSigningKey, Microsoft.IdentityModel.Tokens.SecurityAlgorithms.HmacSha256)
+            );
+
+            var newJwtString = new JwtSecurityTokenHandler().WriteToken(newToken);
+
+            savedRefreshToken.Revoked = DateTime.UtcNow;
+
+            var newRefreshTokenString = _tokenHelper.Generate();
+            var newRefreshTokenEntry = new RefreshToken
+            {
+                Token = newRefreshTokenString,
+                UserId = user.Id,
+                ExpiryDate = DateTime.UtcNow.AddDays(7),
+                Created = DateTime.UtcNow,
+                CreatedByIp = HttpContext.Connection.RemoteIpAddress?.ToString()
+            };
+
+            _context.RefreshTokens.Add(newRefreshTokenEntry);
+            await _context.SaveChangesAsync();
+
+            return Ok(new
+            {
+                token = newJwtString,
+                refreshToken = newRefreshTokenString,
+                expiresIn = duration * 60
+            });
+        }
+        catch (Exception ex)
+        {
+            return Unauthorized(new { message = "Token refresh failed" });
+        }
     }
 }

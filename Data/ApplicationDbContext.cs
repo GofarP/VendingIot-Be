@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using VendingIot.Models;
+using VendingIoT.API.Models;
 namespace VendingIot.Data;
 
 public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
@@ -23,16 +24,22 @@ public class ApplicationDbContext : IdentityDbContext<ApplicationUser>
 
     public DbSet<VendingItem> VendingItems { get; set; }
 
+    public DbSet<RefreshToken>RefreshTokens{get; set;}
+
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
 
+        builder.Entity<RefreshToken>()
+        .HasIndex(r=>r.Token)
+        .IsUnique();
+
         builder.Entity<VendingItem>(entity =>
         {
             entity.HasOne(vi => vi.VendingMachine)
-          .WithMany(vm => vm.VendingItems)
-          .HasForeignKey(vi => vi.VendingMachineId)
-          .OnDelete(DeleteBehavior.Cascade); // Jika mesin dihapus, stoknya ikut terhapus
+                .WithMany(vm => vm.VendingItems)
+                .HasForeignKey(vi => vi.VendingMachineId)
+                .OnDelete(DeleteBehavior.Cascade);
 
             entity.HasOne(vi => vi.Item)
                   .WithMany(i => i.VendingItems)
