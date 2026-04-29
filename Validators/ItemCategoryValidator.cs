@@ -4,7 +4,7 @@ using VendingIot.Data;
 using VendingIot.Models;
 namespace VendingIot.Validators;
 
-public class ItemCategoryValidator : AbstractValidator<Department>
+public class ItemCategoryValidator : AbstractValidator<ItemCategory>
 {
     private readonly ApplicationDbContext _context;
 
@@ -24,7 +24,7 @@ public class ItemCategoryValidator : AbstractValidator<Department>
     }
 
 
-    private async Task<bool> BeUniqueName(Department model, string name, CancellationToken token)
+    private async Task<bool> BeUniqueName(ItemCategory model, string name, CancellationToken token)
     {
         var exists = await _context.Departments
         .AnyAsync(d => d.Name == name && d.Id != model.Id, token);
