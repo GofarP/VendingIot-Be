@@ -29,22 +29,37 @@ namespace VendingIot.Controllers
                 page = page < 1 ? 1 : page;
                 pageSize = pageSize < 1 ? 10 : pageSize;
 
-                var query = _context.Items.Include(i => i.ItemCategory).AsQueryable();
+                var query = _context.Items
+                    .Include(i => i.ItemCategory)
+                    .AsNoTracking()
+                    .AsQueryable();
 
                 if (!string.IsNullOrEmpty(search))
                 {
-                    query = query.Where(i => i.Name.Contains(search));
+                    query = query.Where(i => i.Name.Contains(search) ||
+                                             (i.ItemCategory != null && i.ItemCategory.Name.Contains(search)));
                 }
 
                 var totalCount = await query.CountAsync();
+
                 var items = await query
                     .OrderByDescending(i => i.Id)
                     .Skip((page - 1) * pageSize)
                     .Take(pageSize)
+                    .Select(i => new ItemResponseDto
+                    {
+                        Id = i.Id,
+                        Name = i.Name,
+                        Price = i.Price,
+                        Quantity = i.Quantity,
+                        ItemCategoryId = i.ItemCategoryId,
+                        ItemCategoryName = i.ItemCategory != null ? i.ItemCategory.Name : "-"
+                    })
                     .ToListAsync();
 
                 return Ok(new
                 {
+                    success = true,
                     data = items,
                     pagination = new
                     {
@@ -57,7 +72,7 @@ namespace VendingIot.Controllers
             }
             catch (Exception ex)
             {
-                return StatusCode(500, new { message = "Internal Server Error", error = ex.Message });
+                return StatusCode(500, new { success = false, message = "Internal Server Error", error = ex.Message });
             }
         }
 
