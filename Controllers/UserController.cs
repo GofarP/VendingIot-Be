@@ -16,15 +16,18 @@ public class UserController : ControllerBase
     private readonly UserManager<ApplicationUser> _userManager;
     private readonly IValidator<UserCreateDto> _createValidator;
     private readonly IValidator<UserUpdateDTO> _updateValidator;
+    private readonly IWebHostEnvironment _environment;
 
     public UserController(
         UserManager<ApplicationUser> userManager,
         IValidator<UserCreateDto> createValidator,
-        IValidator<UserUpdateDTO> updateValidator)
+        IValidator<UserUpdateDTO> updateValidator,
+        IWebHostEnvironment environment)
     {
         _userManager = userManager;
         _createValidator = createValidator;
         _updateValidator = updateValidator;
+        _environment = environment;
     }
 
     [HttpGet]
@@ -106,14 +109,34 @@ public class UserController : ControllerBase
             FullName = dto.FullName
         };
 
-        if (dto.PhotoFile != null) user.Photo = await SaveFile(dto.PhotoFile);
+        if (dto.PhotoFile != null && dto.PhotoFile.Length > 0)
+        {
+            user.Photo = await SaveFile(dto.PhotoFile);
+        }
 
         var result = await _userManager.CreateAsync(user, dto.Password);
-        if (!result.Succeeded) return BadRequest(new { errors = result.Errors.Select(e => e.Description) });
 
-        return CreatedAtAction(nameof(GetById), new { id = user.Id }, new { message = "User berhasil dibuat", data = user });
+        if (!result.Succeeded)
+        {
+            if (!string.IsNullOrEmpty(user.Photo)) DeleteOldFile(user.Photo);
+
+            return BadRequest(new { errors = result.Errors.Select(e => e.Description) });
+        }
+
+        return CreatedAtAction(nameof(GetById), new { id = user.Id }, new
+        {
+            message = "User berhasil dibuat",
+            data = new
+            {
+                user.Id,
+                user.FullName,
+                user.Email,
+                user.Photo,
+                PhotoUrl = string.IsNullOrEmpty(user.Photo) ? null : $"/uploads/users/{user.Photo}"
+            }
+        });
     }
-
+    
     [HttpPut("{id}")]
     [Consumes("multipart/form-data")]
     public async Task<IActionResult> Update(string id, [FromForm] UserUpdateDTO dto)
@@ -139,14 +162,30 @@ public class UserController : ControllerBase
 
         if (dto.PhotoFile != null)
         {
-            if (!string.IsNullOrEmpty(user.Photo)) DeleteOldFile(user.Photo);
+            if (!string.IsNullOrEmpty(user.Photo))
+            {
+                DeleteOldFile(user.Photo);
+            }
+
             user.Photo = await SaveFile(dto.PhotoFile);
         }
 
         var result = await _userManager.UpdateAsync(user);
-        if (!result.Succeeded) return BadRequest(new { errors = result.Errors.Select(e => e.Description) });
+        if (!result.Succeeded)
+            return BadRequest(new { errors = result.Errors.Select(e => e.Description) });
 
-        return Ok(new { message = "User diperbarui", data = user });
+        return Ok(new
+        {
+            message = "User diperbarui",
+            data = new
+            {
+                user.Id,
+                user.FullName,
+                user.Email,
+                user.Photo,
+                PhotoUrl = string.IsNullOrEmpty(user.Photo) ? null : $"/uploads/users/{user.Photo}"
+            }
+        });
     }
 
     [HttpDelete("{id}")]

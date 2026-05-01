@@ -15,6 +15,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddValidatorsFromAssemblyContaining<DepartmentValidator>();
 
 builder.Services.AddScoped<ITokenHelper, TokenHelper>();
+builder.Services.AddScoped<IFileService, FileService>();
 
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
@@ -54,7 +55,7 @@ builder.Services.AddAuthentication(options =>
             {
                 context.Token = accessToken;
             }
-            
+
             return Task.CompletedTask;
         },
         OnChallenge = context =>
@@ -80,7 +81,7 @@ builder.Services.AddAuthentication(options =>
         ValidIssuer = jwtSettings["Issuer"],
         ValidAudience = jwtSettings["Audience"],
         IssuerSigningKey = new SymmetricSecurityKey(key),
-        ClockSkew = TimeSpan.FromSeconds(30) 
+        ClockSkew = TimeSpan.FromSeconds(30)
     };
 });
 
@@ -90,7 +91,7 @@ builder.Services.AddCors(options =>
 {
     options.AddPolicy("VendingIotFe", policy =>
     {
-        policy.WithOrigins("http://localhost:3000") 
+        policy.WithOrigins("http://localhost:3000")
               .AllowAnyHeader()
               .AllowAnyMethod()
               .AllowCredentials();
@@ -119,7 +120,7 @@ app.UseCors("VendingIotFe");
 // app.UseHttpsRedirection(); // Aktifkan di production
 
 app.UseAuthentication();
-app.UseAuthorization(); 
+app.UseAuthorization();
 
 app.UseStaticFiles();
 app.MapControllers();

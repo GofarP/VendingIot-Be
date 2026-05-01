@@ -10,4 +10,4 @@ public class ApplicationUser : IdentityUser
 
     [Column(TypeName="varchar(255)")]
     public string? Photo {get; set;}
-}
+}   
