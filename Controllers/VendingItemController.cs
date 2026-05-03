@@ -80,26 +80,66 @@ public class VendingItemController : ControllerBase
         }
     }
 
-    [HttpGet("machine/{machineId}")]
-    public async Task<IActionResult> GetItemsByMachine(int machineId)
+    [HttpGet("getitembymachine/{machineId}")]
+    public async Task<IActionResult> GetItemsByMachine(
+        int machineId,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 10,
+        [FromQuery] string? search = null
+    )
     {
-        var stocks = await _context.VendingItems
-            .Include(v => v.Item)
-                .ThenInclude(i => i.ItemCategory)
-            .Where(v => v.VendingMachineId == machineId)
+        try
+        {
+            page = page < 1 ? 10 : pageSize;
+
+            var query = _context.VendingItems
+            .AsNoTracking()
+            .Where(v => v.VendingMachineId == machineId);
+
+            if (!string.IsNullOrEmpty(search))
+            {
+                query = query.Where(v => v.Item.Name.Contains(search) ||
+                 v.Item.ItemCategory.Name.Contains(search));
+            }
+
+            var totalCount = await query.CountAsync();
+
+            var stocks = await query
+            .OrderBy(v => v.Id)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
             .Select(v => new
             {
-                Id = v.Id,
-                VendingMachineId = v.VendingMachineId,
-                Quantity = v.Quantity,
-                Capacity = v.Capacity,
+                v.Id,
+                v.VendingMachineId,
+                v.Quantity,
+                v.Capacity,
                 Price = v.Item.Price,
                 ItemName = v.Item.Name,
                 CategoryName = v.Item.ItemCategory.Name
             })
             .ToListAsync();
 
-        return Ok(new { data = stocks });
+            return Ok(new
+            {
+                message = "Success get item from machine",
+                data = stocks,
+                pagination = new
+                {
+                    totalCount,
+                    pageSize,
+                    currentPage = page,
+                    totalPages = (int)Math.Ceiling(totalCount / (double)pageSize)
+
+                }
+            });
+
+
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { message = "Internal server error", error = ex.Message });
+        }
     }
 
     [HttpPost("assignitemtomachine")]
