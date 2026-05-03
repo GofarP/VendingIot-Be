@@ -23,20 +23,86 @@ public class VendingItemController : ControllerBase
         _validator = validator;
     }
 
+    [HttpGet("vendingwithstock")]
+    public async Task<IActionResult> GetVendingMachineWithStock([FromQuery] int page = 1, [FromQuery] int pageSize = 10, [FromQuery] string? search = null)
+    {
+        try
+        {
+            page = page < 1 ? 1 : page;
+            pageSize = pageSize < 1 ? 10 : pageSize;
 
-    [HttpGet("machine/{machinId}")]
+            var query = _context.VendingMachines.AsQueryable();
+
+            if (!string.IsNullOrEmpty(search))
+            {
+                query = query.Where(v => v.Name.Contains(search) ||
+                                       v.MachineCode.Contains(search) ||
+                                       v.Location.Contains(search));
+            }
+
+            var totalCount = await query.CountAsync();
+
+            var data = await query
+                .OrderByDescending(v => v.Id)
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .Select(v => new
+                {
+                    v.Id,
+                    v.Name,
+                    v.MachineCode,
+                    v.Location,
+                    TotalItemTypes = v.VendingItems.Count(),
+                    TotalStock = v.VendingItems.Sum(vi => vi.Quantity),
+                    TotalCategories = v.VendingItems
+                        .Select(vi => vi.Item.ItemCategoryId)
+                        .Distinct()
+                        .Count()
+                })
+                .ToListAsync();
+
+            return Ok(new
+            {
+                message = "Success retrieve vending machine statistics",
+                data,
+                pagination = new
+                {
+                    totalCount,
+                    pageSize,
+                    currentPage = page,
+                    totalPages = (int)Math.Ceiling(totalCount / (double)pageSize)
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { message = "Internal Server Error", error = ex.Message });
+        }
+    }
+
+    [HttpGet("machine/{machineId}")]
     public async Task<IActionResult> GetItemsByMachine(int machineId)
     {
         var stocks = await _context.VendingItems
-        .Include(v => v.Item)
-            .ThenInclude(i => i.ItemCategory) // Kita ikutkan kategori barangnya
-        .Where(v => v.VendingMachineId == machineId)
-        .ToListAsync();
+            .Include(v => v.Item)
+                .ThenInclude(i => i.ItemCategory)
+            .Where(v => v.VendingMachineId == machineId)
+            .Select(v => new
+            {
+                Id = v.Id,
+                VendingMachineId = v.VendingMachineId,
+                Quantity = v.Quantity,
+                Capacity = v.Capacity,
+                Price = v.Item.Price,
+                ItemName = v.Item.Name,
+                CategoryName = v.Item.ItemCategory.Name
+            })
+            .ToListAsync();
 
         return Ok(new { data = stocks });
     }
 
-    [HttpPost]
+    [HttpPost("assignitemtomachine")]
     public async Task<IActionResult> AssignItemToMachine(VendingItem vendingItem)
     {
         var validationResult = await _validator.ValidateAsync(vendingItem);
@@ -62,6 +128,22 @@ public class VendingItemController : ControllerBase
 
         return Ok(new { message = "Item successfully added to machine", data = vendingItem });
 
+    }
+
+    [HttpDelete("{id}")]
+    public async Task<IActionResult> RemoveItemFromMachine(int id)
+    {
+        var vendingItem = await _context.VendingItems.FindAsync(id);
+
+        if (vendingItem == null)
+        {
+            return NotFound(new { message = "Item not found in this machine" });
+        }
+
+        _context.VendingItems.Remove(vendingItem);
+        await _context.SaveChangesAsync();
+
+        return Ok(new { message = "Item successfully removed from machine" });
     }
 
     [HttpPut("{id}/restock")]

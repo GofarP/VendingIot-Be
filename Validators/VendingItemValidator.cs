@@ -23,6 +23,9 @@ public class VendingItemValidator : AbstractValidator<VendingItem>
             .MustAsync(async (id, token) => await _context.Items.AnyAsync(i => i.Id == id, token))
             .WithMessage("Item tidak ditemukan di database.");
 
+        RuleFor(x => x.Quantity)
+            .GreaterThan(0).WithMessage("Kapasitas minimal adalah 1.");
+
         RuleFor(x => x.Capacity)
             .GreaterThan(0).WithMessage("Kapasitas minimal adalah 1.");
 

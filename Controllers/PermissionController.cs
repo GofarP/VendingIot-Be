@@ -29,7 +29,7 @@ namespace VendingIot.Controllers
                 page = page < 1 ? 1 : page;
                 pageSize = pageSize < 1 ? 10 : pageSize;
 
-                var query = _context.Permissions.AsQueryable();
+                var query = _context.Permissions.AsNoTracking();
 
                 if (!string.IsNullOrEmpty(search))
                 {
@@ -37,14 +37,26 @@ namespace VendingIot.Controllers
                 }
 
                 var totalCount = await query.CountAsync();
+
                 var permissions = await query
                     .OrderByDescending(x => x.Id)
                     .Skip((page - 1) * pageSize)
                     .Take(pageSize)
+                    .Select(p => new
+                    {
+                        p.Id,
+                        p.Name,
+                        PermissionCategory = p.PermissionCategory != null ? new
+                        {
+                            p.PermissionCategory.Id,
+                            p.PermissionCategory.Name
+                        } : null
+                    })
                     .ToListAsync();
 
                 return Ok(new
                 {
+                    message = "Success retrieve permissions",
                     data = permissions,
                     pagination = new
                     {
@@ -57,6 +69,7 @@ namespace VendingIot.Controllers
             }
             catch (Exception ex)
             {
+                // Log ex.Message di sini jika perlu
                 return StatusCode(500, new { message = "Internal Server Error", error = ex.Message });
             }
         }
