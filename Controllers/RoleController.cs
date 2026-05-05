@@ -16,8 +16,8 @@ public class RoleController : ControllerBase
     private readonly IValidator<RoleCreateDto> _validator;
 
     public RoleController(
-        RoleManager<IdentityRole> roleManager, 
-        ApplicationDbContext context, 
+        RoleManager<IdentityRole> roleManager,
+        ApplicationDbContext context,
         IValidator<RoleCreateDto> validator)
     {
         _roleManager = roleManager;
@@ -26,13 +26,54 @@ public class RoleController : ControllerBase
     }
 
     [HttpGet]
-    public async Task<IActionResult> GetRoles()
+    public async Task<IActionResult> GetRoles(
+    [FromQuery] string? search = null,
+    [FromQuery] int page = 1,
+    [FromQuery] int pageSize = 10)
     {
-        var roles = await _roleManager.Roles
-            .Select(r => new { r.Id, r.Name })
-            .ToListAsync();
+        page = page < 1 ? 1 : page;
+        pageSize = pageSize < 1 ? 10 : (pageSize > 50 ? 50 : pageSize);
 
-        return Ok(new { data = roles });
+        try
+        {
+            var query = _roleManager.Roles.AsNoTracking();
+
+            if (!string.IsNullOrWhiteSpace(search))
+            {
+                query = query.Where(r => r.Name != null && r.Name.Contains(search));
+            }
+
+            var totalCount = await query.CountAsync();
+
+            // 5. Eksekusi Query dengan Pagination
+            var roles = await query
+                .OrderBy(r => r.Name) // Urutkan alfabetis agar user tidak bingung
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .Select(r => new
+                {
+                    r.Id,
+                    r.Name
+                })
+                .ToListAsync();
+
+            return Ok(new
+            {
+                message = "Roles retrieved successfully",
+                data = roles,
+                pagination = new
+                {
+                    totalCount,
+                    pageSize,
+                    currentPage = page,
+                    totalPages = (int)Math.Ceiling(totalCount / (double)pageSize)
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            return StatusCode(500, new { message = "Gagal mengambil data role.", error = ex.Message });
+        }
     }
 
     [HttpGet("{id}")]
