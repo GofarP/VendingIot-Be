@@ -1,5 +1,4 @@
 using VendingIot.Models;
-using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using VendingIot.Data;
 using Microsoft.EntityFrameworkCore;

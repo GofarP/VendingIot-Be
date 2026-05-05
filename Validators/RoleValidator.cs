@@ -1,30 +1,27 @@
 using FluentValidation;
-using Microsoft.EntityFrameworkCore;
-using VendingIot.Data;
-using VendingIot.Models;
+using Microsoft.AspNetCore.Identity;
 
 namespace VendingIot.Validators;
 
-public class RoleValidator : AbstractValidator<Role>
+public class RoleValidator : AbstractValidator<RoleCreateDto>
 {
-    private readonly ApplicationDbContext _context;
+    private readonly RoleManager<IdentityRole> _roleManager;
 
-    public RoleValidator(ApplicationDbContext context)
+    public RoleValidator(RoleManager<IdentityRole> roleManager)
     {
-        _context = context;
+        _roleManager = roleManager;
 
         RuleFor(x => x.Name)
-                    .NotEmpty().WithMessage("Nama role wajib diisi.")
+            .NotEmpty().WithMessage("Nama role wajib diisi.")
             .MaximumLength(30).WithMessage("Nama role maksimal 30 karakter.")
-            .MustAsync(BeUniqueName).WithMessage("Nama role '{PropertyValue}' sudah ada.");
-
+            .MustAsync(BeUniqueName).WithMessage("Nama role '{PropertyValue}' sudah digunakan.");
     }
 
-    private async Task<bool> BeUniqueName(Role model, string name, CancellationToken token)
+    private async Task<bool> BeUniqueName(RoleCreateDto dto, string name, CancellationToken token)
     {
-        var exists = await _context.Roles
-           .AnyAsync(r => r.Name == name && r.Id != model.Id, token);
-
-        return !exists;
+        var role = await _roleManager.FindByNameAsync(name);
+        
+        // Benar jika nama belum ada, ATAU nama ada tapi milik ID yang sedang diedit
+        return role == null || role.Id == dto.Id;
     }
 }
