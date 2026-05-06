@@ -485,3 +485,7 @@ $RECYCLE.BIN/
 
 #appsettings.json for mysql connection
 *appsettings.json
+
+#upload for users photo
+wwwroot/uploads/users/*
+!wwwroot/uploads/users/.gitkeep
