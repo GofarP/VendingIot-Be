@@ -7,6 +7,7 @@ namespace VendingIot.Validators;
 
 public class UserCreateValidator : AbstractValidator<UserCreateDto>
 {
+    private readonly RoleManager<IdentityRole> _roleManager;
     public UserCreateValidator(UserManager<ApplicationUser> userManager)
     {
         RuleFor(x => x.FullName).NotEmpty().WithMessage("Nama lengkap wajib diisi.");
@@ -16,8 +17,12 @@ public class UserCreateValidator : AbstractValidator<UserCreateDto>
             .MustAsync(async (email, token) => await userManager.FindByEmailAsync(email) == null)
             .WithMessage("Email sudah terdaftar.");
         RuleFor(x => x.Password).NotEmpty().MinimumLength(6).WithMessage("Password minimal 6 karakter.");
-        
+
         RuleFor(x => x.PhotoFile).Must(ValidatePhoto).WithMessage("Format foto harus JPG/PNG dan maksimal 2MB.");
+
+        RuleFor(x => x.RoleName)
+            .NotEmpty().WithMessage("Role wajib dipilih.")
+            .MustAsync(RoleExists).WithMessage("Role '{PropertyValue}' tidak ditemukan di sistem.");
     }
 
     private bool ValidatePhoto(IFormFile? file)
@@ -25,6 +30,10 @@ public class UserCreateValidator : AbstractValidator<UserCreateDto>
         if (file == null) return true;
         var extension = Path.GetExtension(file.FileName).ToLower();
         return (file.Length <= 2 * 1024 * 1024) && (new[] { ".jpg", ".jpeg", ".png" }.Contains(extension));
+    }
+    private async Task<bool> RoleExists(string roleName, CancellationToken token)
+    {
+        return await _roleManager.RoleExistsAsync(roleName);
     }
 }
 

@@ -3,10 +3,16 @@ using Microsoft.AspNetCore.Identity;
 
 namespace VendingIot.Models.DTO;
 
-public class UserUpdateValidator : AbstractValidator<UserUpdateDTO> // Pastikan nama DTO konsisten
+public class UserUpdateValidator : AbstractValidator<UserUpdateDTO>
 {
-    public UserUpdateValidator(UserManager<ApplicationUser> userManager) // HAPUS string userId di sini!
+    private readonly RoleManager<IdentityRole> _roleManager;
+
+    public UserUpdateValidator(
+        UserManager<ApplicationUser> userManager, 
+        RoleManager<IdentityRole> roleManager) // Inject RoleManager di sini
     {
+        _roleManager = roleManager;
+
         RuleFor(x => x.FullName)
             .NotEmpty().WithMessage("Nama wajib diisi.");
 
@@ -16,15 +22,24 @@ public class UserUpdateValidator : AbstractValidator<UserUpdateDTO> // Pastikan 
             .MustAsync(async (model, email, token) =>
             {
                 var user = await userManager.FindByEmailAsync(email);
-                
-                // Di sini kita pakai model.Id (ID yang ada di DTO), bukan dari constructor
+                // Validasi agar email unik, kecuali untuk user itu sendiri
                 return user == null || user.Id == model.Id;
             })
             .WithMessage("Email sudah digunakan oleh user lain.");
 
+        // --- TAMBAHKAN VALIDASI ROLE DI SINI ---
+        RuleFor(x => x.RoleName)
+            .NotEmpty().WithMessage("Role wajib dipilih.")
+            .MustAsync(async (roleName, token) => 
+            {
+                return await _roleManager.RoleExistsAsync(roleName);
+            })
+            .WithMessage("Role '{PropertyValue}' tidak ditemukan di sistem.");
+
         RuleFor(x => x.Password)
             .MinimumLength(6)
-            .When(x => !string.IsNullOrEmpty(x.Password));
+            .When(x => !string.IsNullOrEmpty(x.Password))
+            .WithMessage("Password minimal harus 6 karakter.");
 
         RuleFor(x => x.PhotoFile)
             .Must(ValidatePhoto)
@@ -32,5 +47,6 @@ public class UserUpdateValidator : AbstractValidator<UserUpdateDTO> // Pastikan 
     }
 
     private bool ValidatePhoto(IFormFile? file) => 
-        file == null || (file.Length <= 2 * 1024 * 1024 && new[] { ".jpg", ".png", ".jpeg" }.Contains(Path.GetExtension(file.FileName).ToLower()));
+        file == null || (file.Length <= 2 * 1024 * 1024 && 
+        new[] { ".jpg", ".png", ".jpeg" }.Contains(Path.GetExtension(file.FileName).ToLower()));
 }
