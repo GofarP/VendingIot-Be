@@ -27,16 +27,15 @@ public class RoleController : ControllerBase
 
     [HttpGet]
     public async Task<IActionResult> GetRoles(
-     [FromQuery] string? search = null,
-     [FromQuery] int page = 1,
-     [FromQuery] int pageSize = 10)
+    [FromQuery] string? search = null,
+    [FromQuery] int page = 1,
+    [FromQuery] int pageSize = 10)
     {
         page = page < 1 ? 1 : page;
         pageSize = pageSize < 1 ? 10 : (pageSize > 50 ? 50 : pageSize);
 
         try
         {
-            // Gunakan query dari _context agar bisa melakukan join/subquery ke RoleClaims dengan mudah
             var query = _context.Roles.AsNoTracking();
 
             if (!string.IsNullOrWhiteSpace(search))
@@ -46,7 +45,8 @@ public class RoleController : ControllerBase
 
             var totalCount = await query.CountAsync();
 
-            var roles = await query
+            // 1. Ambil data mentah dari database secara ASYNC
+            var rolesData = await query
                 .OrderBy(r => r.Name)
                 .Skip((page - 1) * pageSize)
                 .Take(pageSize)
@@ -54,13 +54,26 @@ public class RoleController : ControllerBase
                 {
                     r.Id,
                     r.Name,
-                    // Mengambil list string permissions (ClaimValue) untuk setiap role
-                    Permissions = _context.RoleClaims
+                    // Subquery untuk mengambil data permission mentah
+                    RawPermissions = _context.RoleClaims
                         .Where(rc => rc.RoleId == r.Id && rc.ClaimType == "Permission")
-                        .Select(rc => rc.ClaimValue)
+                        .Join(_context.Permissions,
+                            rc => rc.ClaimValue,
+                            p => p.Name,
+                            (rc, p) => new { p.Id, p.Name })
+                        .Select(p => new { p.Id, p.Name })
                         .ToList()
                 })
-                .ToListAsync();
+                .ToListAsync(); // <--- await berhenti di sini setelah data didapat dari DB
+
+            // 2. Format data di memori secara SINKRON
+            var roles = rolesData.Select(r => new
+            {
+                r.Id,
+                r.Name,
+                Permissions = r.RawPermissions.Select(p => p.Name).ToList(),
+                PermissionIds = r.RawPermissions.Select(p => p.Id).ToList()
+            }).ToList();
 
             return Ok(new
             {
