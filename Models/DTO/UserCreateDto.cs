@@ -7,6 +7,8 @@ public class UserCreateDto
 
     public string Password {get; set;}
 
+    public string RoleName {get;set;}=string.Empty;
+
     public IFormFile? PhotoFile {get;set;}
 
 }

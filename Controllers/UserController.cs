@@ -99,8 +99,7 @@ public class UserController : ControllerBase
     public async Task<IActionResult> Create([FromForm] UserCreateDto dto)
     {
         var validationResult = await _createValidator.ValidateAsync(dto);
-        if (!validationResult.IsValid)
-            return BadRequest(new { errors = validationResult.ToDictionary() });
+        if (!validationResult.IsValid) return BadRequest(new { errors = validationResult.ToDictionary() });
 
         var user = new ApplicationUser
         {
@@ -119,34 +118,45 @@ public class UserController : ControllerBase
         if (!result.Succeeded)
         {
             if (!string.IsNullOrEmpty(user.Photo)) DeleteOldFile(user.Photo);
-
             return BadRequest(new { errors = result.Errors.Select(e => e.Description) });
+        }
+
+
+        var roleResult = await _userManager.AddToRoleAsync(user, dto.RoleName);
+
+        if (!roleResult.Succeeded)
+        {
+            await _userManager.DeleteAsync(user);
+            if (!string.IsNullOrEmpty(user.Photo)) DeleteOldFile(user.Photo);
+            return BadRequest(new { errors = roleResult.Errors.Select(e => e.Description) });
         }
 
         return CreatedAtAction(nameof(GetById), new { id = user.Id }, new
         {
-            message = "User berhasil dibuat",
+            messsage = "User Berhasil Ditambahkan",
             data = new
             {
                 user.Id,
                 user.FullName,
                 user.Email,
+                Role = dto.RoleName,
                 user.Photo,
                 PhotoUrl = string.IsNullOrEmpty(user.Photo) ? null : $"/uploads/users/{user.Photo}"
             }
         });
+
     }
-    
+
     [HttpPut("{id}")]
     [Consumes("multipart/form-data")]
-    public async Task<IActionResult> Update(string id, [FromForm] UserUpdateDTO dto)
+    public async Task<IActionResult> update(string id, [FromForm] UserUpdateDTO dto)
     {
         var user = await _userManager.FindByIdAsync(id);
         if (user == null) return NotFound(new { message = "User tidak ditemukan" });
-
         dto.Id = id;
 
         var validationResult = await _updateValidator.ValidateAsync(dto);
+
         if (!validationResult.IsValid)
             return BadRequest(new { errors = validationResult.ToDictionary() });
 
@@ -162,17 +172,27 @@ public class UserController : ControllerBase
 
         if (dto.PhotoFile != null)
         {
-            if (!string.IsNullOrEmpty(user.Photo))
-            {
-                DeleteOldFile(user.Photo);
-            }
-
+            if (!string.IsNullOrEmpty(user.Photo)) DeleteOldFile(user.Photo);
             user.Photo = await SaveFile(dto.PhotoFile);
         }
 
         var result = await _userManager.UpdateAsync(user);
         if (!result.Succeeded)
             return BadRequest(new { errors = result.Errors.Select(e => e.Description) });
+
+        var currentRoles = await _userManager.GetRolesAsync(user);
+
+        if (!currentRoles.Contains(dto.RoleName))
+        {
+            await _userManager.RemoveFromRolesAsync(user, currentRoles);
+            var roleResult = await _userManager.AddToRoleAsync(user, dto.RoleName);
+
+            if (!roleResult.Succeeded)
+            {
+                return BadRequest(new { message = "Gagal memperbarui role user", errors = roleResult.Errors.Select(e => e.Description) });
+            }
+
+        }
 
         return Ok(new
         {
@@ -182,10 +202,12 @@ public class UserController : ControllerBase
                 user.Id,
                 user.FullName,
                 user.Email,
+                Role = dto.RoleName,
                 user.Photo,
                 PhotoUrl = string.IsNullOrEmpty(user.Photo) ? null : $"/uploads/users/{user.Photo}"
             }
         });
+
     }
 
     [HttpDelete("{id}")]
