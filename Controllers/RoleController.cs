@@ -93,17 +93,33 @@ public class RoleController : ControllerBase
             return StatusCode(500, new { message = "Gagal mengambil data role.", error = ex.Message });
         }
     }
-
     [HttpGet("{id}")]
     public async Task<IActionResult> GetRole(string id)
     {
-        var role = await _roleManager.FindByIdAsync(id);
+        var role = await _context.Roles.AsNoTracking()
+            .FirstOrDefaultAsync(r => r.Id == id);
+
         if (role == null) return NotFound(new { message = "Role tidak ditemukan" });
 
-        var claims = await _roleManager.GetClaimsAsync(role);
-        var permissions = claims.Where(c => c.Type == "Permission").Select(c => c.Value).ToList();
+        var rawPermissions = await _context.RoleClaims
+            .Where(rc => rc.RoleId == id && rc.ClaimType == "Permission")
+            .Join(_context.Permissions,
+                rc => rc.ClaimValue,
+                p => p.Name,   
+                (rc, p) => new { p.Id, p.Name })
+            .ToListAsync();
 
-        return Ok(new { data = new { role.Id, role.Name, Permissions = permissions } });
+
+        return Ok(new
+        {
+            data = new
+            {
+                role.Id,
+                role.Name,
+                Permissions = rawPermissions.Select(p => p.Name).ToList(),
+                PermissionIds = rawPermissions.Select(p => p.Id).ToList()
+            }
+        });
     }
 
     [HttpPost]
