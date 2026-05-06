@@ -17,7 +17,7 @@ public class VendingMachine
 
     public bool IsActive { get; set; } = true;
 
-    public DateTime LastRestock { get; set; }
+    public DateTime? LastRestock { get; set; }
 
     public ICollection<VendingItem> VendingItems { get; set; } = new List<VendingItem>();
 

@@ -1,3 +1,4 @@
+using System.Data;
 using FluentValidation;
 using Microsoft.EntityFrameworkCore;
 using VendingIot.Data;
@@ -16,6 +17,12 @@ public class ItemValidator : AbstractValidator<Item>
         RuleFor(x => x.Name)
             .NotEmpty().WithMessage("Please fill item name")
             .MustAsync(BeUniqueName).WithMessage("This item name '{PropertyValue}' already exists");
+
+        RuleFor(x => x.Price)
+        .NotEmpty().WithMessage("Please fill item price");
+
+        RuleFor(x=>x.Quantity)
+        .NotEmpty().WithMessage("Please fill quantity");
 
         RuleFor(x => x.ItemCategoryId)
             .GreaterThan(0).WithMessage("Please select a valid item category")

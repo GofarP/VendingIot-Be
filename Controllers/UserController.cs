@@ -5,6 +5,7 @@ using FluentValidation;
 using VendingIot.Models;
 using VendingIot.Models.DTO;
 using Microsoft.AspNetCore.Authorization;
+using VendingIot.Data;
 
 namespace VendingIot.Controllers;
 
@@ -18,16 +19,23 @@ public class UserController : ControllerBase
     private readonly IValidator<UserUpdateDTO> _updateValidator;
     private readonly IWebHostEnvironment _environment;
 
+    private readonly ApplicationDbContext _context;
+    private readonly RoleManager<IdentityRole> _roleManager;
+
     public UserController(
         UserManager<ApplicationUser> userManager,
         IValidator<UserCreateDto> createValidator,
         IValidator<UserUpdateDTO> updateValidator,
-        IWebHostEnvironment environment)
+        RoleManager<IdentityRole> roleManager,
+        IWebHostEnvironment environment,
+        ApplicationDbContext context)
     {
         _userManager = userManager;
         _createValidator = createValidator;
         _updateValidator = updateValidator;
+        _roleManager = roleManager;
         _environment = environment;
+        _context = context;
     }
 
     [HttpGet]
@@ -38,7 +46,7 @@ public class UserController : ControllerBase
             page = page < 1 ? 1 : page;
             pageSize = pageSize < 1 ? 10 : pageSize;
 
-            var query = _userManager.Users.AsQueryable();
+            var query = _userManager.Users.AsNoTracking();
 
             if (!string.IsNullOrEmpty(search))
             {
@@ -46,19 +54,27 @@ public class UserController : ControllerBase
             }
 
             var totalCount = await query.CountAsync();
+
             var users = await query
-                .OrderByDescending(u => u.Id)
-                .Skip((page - 1) * pageSize)
-                .Take(pageSize)
-                .Select(u => new
-                {
-                    u.Id,
-                    u.FullName,
-                    u.Email,
-                    u.Photo,
-                    PhotoUrl = string.IsNullOrEmpty(u.Photo) ? null : $"/uploads/users/{u.Photo}"
-                })
-                .ToListAsync();
+            .OrderByDescending(u => u.Id)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .Select(u => new
+            {
+                u.Id,
+                u.FullName,
+                u.Email,
+                u.Photo,
+                PhotoUrl = string.IsNullOrEmpty(u.Photo) ? null : $"/uploads/users/{u.Photo}",
+                Role = _context.UserRoles
+                    .Where(ur => ur.UserId == u.Id)
+                    .Join(_context.Roles,
+                        ur => ur.RoleId,
+                        r => r.Id,
+                        (ur, r) => new { r.Id, r.Name })
+                    .FirstOrDefault()
+            })
+            .ToListAsync();
 
             return Ok(new
             {
@@ -68,7 +84,7 @@ public class UserController : ControllerBase
                     totalCount,
                     pageSize,
                     currentPage = page,
-                    totalPages = (int)Math.Ceiling(totalCount / (double)pageSize)
+                    totalPages = (int)Math.Ceiling(totalCount / (double)pageSize),
                 }
             });
         }
@@ -84,13 +100,25 @@ public class UserController : ControllerBase
         var user = await _userManager.FindByIdAsync(id);
         if (user == null) return NotFound(new { message = "User tidak ditemukan" });
 
+        var role = await _context.UserRoles
+         .Where(ur => ur.UserId == id)
+         .Join(_context.Roles,
+             ur => ur.RoleId,
+             r => r.Id,
+             (ur, r) => new { r.Id, r.Name })
+         .FirstOrDefaultAsync();
+
         return Ok(new
         {
-            user.Id,
-            user.FullName,
-            user.Email,
-            user.Photo,
-            PhotoUrl = string.IsNullOrEmpty(user.Photo) ? null : $"/uploads/users/{user.Photo}"
+            data = new
+            {
+                user.Id,
+                user.FullName,
+                user.Email,
+                user.Photo,
+                PhotoUrl = string.IsNullOrEmpty(user.Photo) ? null : $"/uploads/users/{user.Photo}",
+                Role = role
+            }
         });
     }
 
@@ -98,8 +126,10 @@ public class UserController : ControllerBase
     [Consumes("multipart/form-data")]
     public async Task<IActionResult> Create([FromForm] UserCreateDto dto)
     {
+        // 1. Validasi Input (Validator harus mengecek RoleId)
         var validationResult = await _createValidator.ValidateAsync(dto);
-        if (!validationResult.IsValid) return BadRequest(new { errors = validationResult.ToDictionary() });
+        if (!validationResult.IsValid)
+            return BadRequest(new { errors = validationResult.ToDictionary() });
 
         var user = new ApplicationUser
         {
@@ -108,11 +138,13 @@ public class UserController : ControllerBase
             FullName = dto.FullName
         };
 
-        if (dto.PhotoFile != null && dto.PhotoFile.Length > 0)
+        // 2. Handle Upload Foto
+        if (dto.Photo != null && dto.Photo.Length > 0)
         {
-            user.Photo = await SaveFile(dto.PhotoFile);
+            user.Photo = await SaveFile(dto.Photo);
         }
 
+        // 3. Simpan User
         var result = await _userManager.CreateAsync(user, dto.Password);
 
         if (!result.Succeeded)
@@ -121,8 +153,17 @@ public class UserController : ControllerBase
             return BadRequest(new { errors = result.Errors.Select(e => e.Description) });
         }
 
+        // 4. Cari Nama Role berdasarkan RoleId untuk Identity
+        var role = await _roleManager.FindByIdAsync(dto.RoleId);
+        if (role == null)
+        {
+            // Rollback jika role tidak ditemukan (seharusnya sudah dicek di validator)
+            await _userManager.DeleteAsync(user);
+            if (!string.IsNullOrEmpty(user.Photo)) DeleteOldFile(user.Photo);
+            return BadRequest(new { message = "Role tidak ditemukan" });
+        }
 
-        var roleResult = await _userManager.AddToRoleAsync(user, dto.RoleName);
+        var roleResult = await _userManager.AddToRoleAsync(user, role.Name!);
 
         if (!roleResult.Succeeded)
         {
@@ -133,30 +174,29 @@ public class UserController : ControllerBase
 
         return CreatedAtAction(nameof(GetById), new { id = user.Id }, new
         {
-            messsage = "User Berhasil Ditambahkan",
+            message = "User Berhasil Ditambahkan",
             data = new
             {
                 user.Id,
                 user.FullName,
                 user.Email,
-                Role = dto.RoleName,
+                Role = role.Name, // Mengembalikan nama role untuk UI
                 user.Photo,
                 PhotoUrl = string.IsNullOrEmpty(user.Photo) ? null : $"/uploads/users/{user.Photo}"
             }
         });
-
     }
 
     [HttpPut("{id}")]
     [Consumes("multipart/form-data")]
-    public async Task<IActionResult> update(string id, [FromForm] UserUpdateDTO dto)
+    public async Task<IActionResult> Update(string id, [FromForm] UserUpdateDTO dto)
     {
         var user = await _userManager.FindByIdAsync(id);
         if (user == null) return NotFound(new { message = "User tidak ditemukan" });
+
         dto.Id = id;
 
         var validationResult = await _updateValidator.ValidateAsync(dto);
-
         if (!validationResult.IsValid)
             return BadRequest(new { errors = validationResult.ToDictionary() });
 
@@ -164,34 +204,38 @@ public class UserController : ControllerBase
         user.Email = dto.Email;
         user.UserName = dto.Email;
 
+        // Handle Password
         if (!string.IsNullOrEmpty(dto.Password))
         {
             var token = await _userManager.GeneratePasswordResetTokenAsync(user);
             await _userManager.ResetPasswordAsync(user, token, dto.Password);
         }
 
-        if (dto.PhotoFile != null)
+        // Handle Photo
+        if (dto.Photo != null)
         {
             if (!string.IsNullOrEmpty(user.Photo)) DeleteOldFile(user.Photo);
-            user.Photo = await SaveFile(dto.PhotoFile);
+            user.Photo = await SaveFile(dto.Photo);
         }
 
         var result = await _userManager.UpdateAsync(user);
         if (!result.Succeeded)
             return BadRequest(new { errors = result.Errors.Select(e => e.Description) });
 
+        // --- LOGIKA UPDATE ROLE BERDASARKAN ROLEID ---
         var currentRoles = await _userManager.GetRolesAsync(user);
+        var targetRole = await _roleManager.FindByIdAsync(dto.RoleId);
 
-        if (!currentRoles.Contains(dto.RoleName))
+        if (targetRole != null && !currentRoles.Contains(targetRole.Name!))
         {
+            // Hapus role lama dan tambah yang baru
             await _userManager.RemoveFromRolesAsync(user, currentRoles);
-            var roleResult = await _userManager.AddToRoleAsync(user, dto.RoleName);
+            var roleResult = await _userManager.AddToRoleAsync(user, targetRole.Name!);
 
             if (!roleResult.Succeeded)
             {
                 return BadRequest(new { message = "Gagal memperbarui role user", errors = roleResult.Errors.Select(e => e.Description) });
             }
-
         }
 
         return Ok(new
@@ -202,12 +246,11 @@ public class UserController : ControllerBase
                 user.Id,
                 user.FullName,
                 user.Email,
-                Role = dto.RoleName,
+                Role = targetRole?.Name ?? "N/A",
                 user.Photo,
                 PhotoUrl = string.IsNullOrEmpty(user.Photo) ? null : $"/uploads/users/{user.Photo}"
             }
         });
-
     }
 
     [HttpDelete("{id}")]
