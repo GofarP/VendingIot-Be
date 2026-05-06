@@ -27,16 +27,17 @@ public class RoleController : ControllerBase
 
     [HttpGet]
     public async Task<IActionResult> GetRoles(
-    [FromQuery] string? search = null,
-    [FromQuery] int page = 1,
-    [FromQuery] int pageSize = 10)
+     [FromQuery] string? search = null,
+     [FromQuery] int page = 1,
+     [FromQuery] int pageSize = 10)
     {
         page = page < 1 ? 1 : page;
         pageSize = pageSize < 1 ? 10 : (pageSize > 50 ? 50 : pageSize);
 
         try
         {
-            var query = _roleManager.Roles.AsNoTracking();
+            // Gunakan query dari _context agar bisa melakukan join/subquery ke RoleClaims dengan mudah
+            var query = _context.Roles.AsNoTracking();
 
             if (!string.IsNullOrWhiteSpace(search))
             {
@@ -45,15 +46,19 @@ public class RoleController : ControllerBase
 
             var totalCount = await query.CountAsync();
 
-            // 5. Eksekusi Query dengan Pagination
             var roles = await query
-                .OrderBy(r => r.Name) // Urutkan alfabetis agar user tidak bingung
+                .OrderBy(r => r.Name)
                 .Skip((page - 1) * pageSize)
                 .Take(pageSize)
                 .Select(r => new
                 {
                     r.Id,
-                    r.Name
+                    r.Name,
+                    // Mengambil list string permissions (ClaimValue) untuk setiap role
+                    Permissions = _context.RoleClaims
+                        .Where(rc => rc.RoleId == r.Id && rc.ClaimType == "Permission")
+                        .Select(rc => rc.ClaimValue)
+                        .ToList()
                 })
                 .ToListAsync();
 
