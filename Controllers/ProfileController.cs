@@ -8,7 +8,7 @@ using VendingIot.Models;
 [Authorize]
 [ApiController]
 [Route("api/[controller]")]
-public class AccountController : ControllerBase
+public class ProfileController : ControllerBase
 {
     private readonly UserManager<ApplicationUser> _userManager;
 
@@ -17,7 +17,7 @@ public class AccountController : ControllerBase
     private readonly IValidator<ChangePasswordDTO> _changePasswordValidator;
     private readonly IValidator<UpdateProfileDTO> _updateProfileValidator;
 
-    public AccountController(
+    public ProfileController(
         UserManager<ApplicationUser> userManager,
         IValidator<ChangePasswordDTO> changePasswordValidator,
         IValidator<UpdateProfileDTO> updateProfileValidator,
@@ -29,7 +29,7 @@ public class AccountController : ControllerBase
         _roleManager=roleManager;
     }
 
-    [HttpPut("profile")]
+    [HttpPut("updateprofile")]
     public async Task<IActionResult> UpdateProfile([FromBody] UpdateProfileDTO model)
     {
         var validationResult = await _updateProfileValidator.ValidateAsync(model);
