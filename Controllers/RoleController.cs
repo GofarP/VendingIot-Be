@@ -4,6 +4,8 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using FluentValidation;
 using VendingIot.Data;
+using Microsoft.AspNetCore.SignalR;
+using VendingIot.Hubs;
 
 namespace VendingIot.Controllers;
 
@@ -14,15 +16,19 @@ public class RoleController : ControllerBase
     private readonly RoleManager<IdentityRole> _roleManager;
     private readonly ApplicationDbContext _context;
     private readonly IValidator<RoleCreateDto> _validator;
+    private readonly IHubContext<NotificationHub> _hubContext;
 
     public RoleController(
         RoleManager<IdentityRole> roleManager,
         ApplicationDbContext context,
-        IValidator<RoleCreateDto> validator)
+        IValidator<RoleCreateDto> validator,
+        IHubContext<NotificationHub> hubContext
+    )
     {
         _roleManager = roleManager;
         _context = context;
         _validator = validator;
+        _hubContext = hubContext;
     }
 
     [HttpGet]
@@ -105,7 +111,7 @@ public class RoleController : ControllerBase
             .Where(rc => rc.RoleId == id && rc.ClaimType == "Permission")
             .Join(_context.Permissions,
                 rc => rc.ClaimValue,
-                p => p.Name,   
+                p => p.Name,
                 (rc, p) => new { p.Id, p.Name })
             .ToListAsync();
 
@@ -159,12 +165,14 @@ public class RoleController : ControllerBase
     [HttpPut("{id}")]
     public async Task<IActionResult> UpdateRole(string id, [FromBody] RoleCreateDto dto)
     {
-        dto.Id = id; // Pastikan ID DTO sinkron dengan URL
+        dto.Id = id;
         var validationResult = await _validator.ValidateAsync(dto);
         if (!validationResult.IsValid)
             return BadRequest(new { errors = validationResult.ToDictionary() });
 
         var role = await _roleManager.FindByIdAsync(id);
+        var oldRoleName = role.Name;
+
         if (role == null) return NotFound(new { message = "Role tidak ditemukan" });
 
         role.Name = dto.Name;
@@ -189,6 +197,8 @@ public class RoleController : ControllerBase
             }
         }
 
+        await _hubContext.Clients.Group(oldRoleName!).SendAsync("OnPermissionChanged");
+        
         return Ok(new { message = "Role berhasil diperbarui" });
     }
 

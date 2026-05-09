@@ -6,6 +6,7 @@ using VendingIot.Models;
 using VendingIot.Models.DTO;
 using Microsoft.AspNetCore.Authorization;
 using VendingIot.Data;
+using VendingIot.Authorization;
 
 namespace VendingIot.Controllers;
 
@@ -39,6 +40,7 @@ public class UserController : ControllerBase
     }
 
     [HttpGet]
+    [HasPermission("view-employee")]
     public async Task<IActionResult> GetAll([FromQuery] int page = 1, [FromQuery] int pageSize = 10, [FromQuery] string? search = null)
     {
         try

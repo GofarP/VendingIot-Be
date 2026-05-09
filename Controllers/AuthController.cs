@@ -264,6 +264,8 @@ public class AuthController : ControllerBase
             }
 
             var roles = await _userManager.GetRolesAsync(user);
+            var permissions = new List<string>(); // Untuk menampung list permission string
+
             var authClaims = new List<Claim>
         {
             new Claim(ClaimTypes.NameIdentifier, user.Id),
@@ -278,7 +280,11 @@ public class AuthController : ControllerBase
                 if (role != null)
                 {
                     var roleClaims = await _roleManager.GetClaimsAsync(role);
-                    foreach (var claim in roleClaims) { authClaims.Add(claim); }
+                    foreach (var claim in roleClaims)
+                    {
+                        authClaims.Add(claim);
+                        permissions.Add(claim.Value);
+                    }
                 }
             }
 
@@ -297,6 +303,7 @@ public class AuthController : ControllerBase
 
             var newJwtString = new JwtSecurityTokenHandler().WriteToken(newToken);
 
+            // Revoke token lama
             savedRefreshToken.Revoked = DateTime.UtcNow;
 
             var newPlainRefreshToken = _tokenHelper.Generate();
@@ -314,11 +321,18 @@ public class AuthController : ControllerBase
             _context.RefreshTokens.Add(newRefreshTokenEntry);
             await _context.SaveChangesAsync();
 
+            // RETURN LENGKAP UNTUK FRONTEND
             return Ok(new
             {
                 token = newJwtString,
                 refreshToken = newPlainRefreshToken,
-                expiresIn = duration * 60
+                expiresIn = duration * 60,
+
+                // Tambahan data Profile
+                email = user.Email,
+                fullName = user.FullName, // Pastikan property FullName ada di ApplicationUser kamu
+                roles = roles,
+                permissions = permissions.Distinct().ToList() // Distinct agar tidak ada duplikat
             });
         }
         catch (Exception ex)
