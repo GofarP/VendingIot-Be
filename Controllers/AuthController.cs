@@ -175,6 +175,7 @@ public class AuthController : ControllerBase
                 refreshToken = plainRefreshToken,
                 email = user.Email,
                 fullName = user.FullName,
+                photo=user.Photo,
                 roles = roles,
                 permissions = permissions.Distinct().ToList(),
                 expiresIn = duration * 60

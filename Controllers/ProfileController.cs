@@ -26,7 +26,7 @@ public class ProfileController : ControllerBase
         _userManager = userManager;
         _changePasswordValidator = changePasswordValidator;
         _updateProfileValidator = updateProfileValidator;
-        _roleManager=roleManager;
+        _roleManager = roleManager;
     }
 
     [HttpPut("updateprofile")]
@@ -37,8 +37,13 @@ public class ProfileController : ControllerBase
         {
             return BadRequest(new
             {
-                message = "Validasi data gagal",
-                errors = validationResult.Errors.Select(e => e.ErrorMessage).ToList()
+                message = "Validation failed",
+                errors = validationResult.Errors
+                         .GroupBy(e => e.PropertyName)
+                         .ToDictionary(
+                             g => g.Key,
+                             g => g.Select(e => e.ErrorMessage).ToArray()
+                         )
             });
         }
 
@@ -53,8 +58,6 @@ public class ProfileController : ControllerBase
         var result = await _userManager.UpdateAsync(user);
         if (result.Succeeded)
         {
-            // 4. Ambil Roles dan Permissions Terbaru
-            // Ini sangat penting agar Sidebar & Header tidak rusak datanya
             var roles = await _userManager.GetRolesAsync(user);
             var permissions = new List<string>();
 
@@ -77,6 +80,7 @@ public class ProfileController : ControllerBase
                 message = "Profile Berhasil Diperbarui",
                 email = user.Email,
                 fullName = user.FullName,
+                photo=user.Photo,
                 roles = roles,
                 permissions = permissions.Distinct().ToList() // Hapus duplikat permission
             });
@@ -85,18 +89,22 @@ public class ProfileController : ControllerBase
         return BadRequest(new { message = "Gagal memperbarui profil", errors = result.Errors.Select(e => e.Description) });
     }
 
-    [HttpPut("change-password")]
+    [HttpPut("changepassword")]
     public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordDTO model)
     {
         var validationResult = await _changePasswordValidator.ValidateAsync(model);
 
         if (!validationResult.IsValid)
         {
-            var errorMessages = validationResult.Errors.Select(e => e.ErrorMessage).ToList();
             return BadRequest(new
             {
-                message = "Validasi data gagal",
-                errors = errorMessages
+                message = "Validation failed",
+                errors = validationResult.Errors
+                        .GroupBy(e => e.PropertyName)
+                        .ToDictionary(
+                            g => g.Key,
+                            g => g.Select(e => e.ErrorMessage).ToArray()
+                        )
             });
         }
         var userid = User.FindFirstValue(ClaimTypes.NameIdentifier);
