@@ -30,7 +30,7 @@ public class ProfileController : ControllerBase
     }
 
     [HttpPut("updateprofile")]
-    public async Task<IActionResult> UpdateProfile([FromBody] UpdateProfileDTO model)
+    public async Task<IActionResult> UpdateProfile([FromForm] UpdateProfileDTO model)
     {
         var validationResult = await _updateProfileValidator.ValidateAsync(model);
         if (!validationResult.IsValid)
@@ -49,11 +49,28 @@ public class ProfileController : ControllerBase
 
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
         var user = await _userManager.FindByIdAsync(userId!);
-        if (user == null) return Unauthorized();
+        if (user == null) return Unauthorized(new { message = "User tidak ditemukan" });
 
         user.FullName = model.FullName;
         user.Email = model.Email;
-        user.UserName = model.Email;
+        user.UserName = model.Email; 
+
+        if (model.Photo != null && model.Photo.Length > 0)
+        {
+            try
+            {
+                if (!string.IsNullOrEmpty(user.Photo))
+                {
+                    DeleteOldFile(user.Photo);
+                }
+
+                user.Photo = await SaveFile(model.Photo);
+            }
+            catch (Exception ex)
+            {
+                return BadRequest(new { message = "Gagal menyimpan foto: " + ex.Message });
+            }
+        }
 
         var result = await _userManager.UpdateAsync(user);
         if (result.Succeeded)
@@ -67,11 +84,7 @@ public class ProfileController : ControllerBase
                 if (role != null)
                 {
                     var roleClaims = await _roleManager.GetClaimsAsync(role);
-                    // Ambil nilai claim untuk daftar permission
-                    foreach (var claim in roleClaims)
-                    {
-                        permissions.Add(claim.Value);
-                    }
+                    permissions.AddRange(roleClaims.Select(c => c.Value));
                 }
             }
 
@@ -80,13 +93,17 @@ public class ProfileController : ControllerBase
                 message = "Profile Berhasil Diperbarui",
                 email = user.Email,
                 fullName = user.FullName,
-                photo=user.Photo,
+                photoUrl = user.Photo,
                 roles = roles,
-                permissions = permissions.Distinct().ToList() // Hapus duplikat permission
+                permissions = permissions.Distinct().ToList()
             });
         }
 
-        return BadRequest(new { message = "Gagal memperbarui profil", errors = result.Errors.Select(e => e.Description) });
+        return BadRequest(new
+        {
+            message = "Gagal memperbarui profil",
+            errors = result.Errors.Select(e => e.Description)
+        });
     }
 
     [HttpPut("changepassword")]
@@ -120,5 +137,24 @@ public class ProfileController : ControllerBase
         }
 
         return BadRequest(new { message = "Gagal Mengubah Password", errors = result.Errors });
+    }
+
+    private async Task<string> SaveFile(IFormFile file)
+    {
+        var path = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot/uploads/users");
+        if (!Directory.Exists(path)) Directory.CreateDirectory(path);
+
+        var fileName = Guid.NewGuid() + Path.GetExtension(file.FileName);
+        var fullPath = Path.Combine(path, fileName);
+
+        using var stream = new FileStream(fullPath, FileMode.Create);
+        await file.CopyToAsync(stream);
+        return fileName;
+    }
+
+    private void DeleteOldFile(string fileName)
+    {
+        var path = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot/uploads/users", fileName);
+        if (System.IO.File.Exists(path)) System.IO.File.Delete(path);
     }
 }

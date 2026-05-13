@@ -175,7 +175,7 @@ public class AuthController : ControllerBase
                 refreshToken = plainRefreshToken,
                 email = user.Email,
                 fullName = user.FullName,
-                photo=user.Photo,
+                photoUrl=user.Photo,
                 roles = roles,
                 permissions = permissions.Distinct().ToList(),
                 expiresIn = duration * 60
@@ -329,9 +329,8 @@ public class AuthController : ControllerBase
                 refreshToken = newPlainRefreshToken,
                 expiresIn = duration * 60,
 
-                // Tambahan data Profile
                 email = user.Email,
-                fullName = user.FullName, // Pastikan property FullName ada di ApplicationUser kamu
+                fullName = user.FullName,
                 roles = roles,
                 permissions = permissions.Distinct().ToList() // Distinct agar tidak ada duplikat
             });
