@@ -105,7 +105,7 @@ public class VendingItemController : ControllerBase
             var totalCount = await query.CountAsync();
 
             var stocks = await query
-                .OrderBy(v => v.Id) 
+                .OrderBy(v => v.Id)
                 .Skip((page - 1) * pageSize)
                 .Take(pageSize)
                 .Select(v => new
@@ -184,23 +184,25 @@ public class VendingItemController : ControllerBase
     }
 
     [HttpPut("{id}/restock")]
-    public async Task<IActionResult> Restock(int id, [FromBody] int newQuantity)
+    public async Task<IActionResult> Restock(int id, [FromBody] RestockRequestDto request)
     {
-        var stock = await _context.VendingItems
+        var item = await _context.VendingItems
             .Include(v => v.VendingMachine)
             .FirstOrDefaultAsync(v => v.Id == id);
 
-        if (stock == null) return NotFound(new { message = "Stock is not found." });
+        if (item == null) return NotFound(new { message = "Item is not found." });
 
-        stock.Quantity = newQuantity;
-        stock.LastUpdated = DateTime.Now;
+        // Update field dari DTO
+        item.Quantity = request.Quantity;
+        item.Capacity = request.Capacity; 
+        item.LastUpdated = DateTime.Now;
 
-        if (stock.VendingMachine != null)
+        if (item.VendingMachine != null)
         {
-            stock.VendingMachine.LastRestock = DateTime.Now;
+            item.VendingMachine.LastRestock = DateTime.Now;
         }
 
-        var validationResult = await _validator.ValidateAsync(stock);
+        var validationResult = await _validator.ValidateAsync(item);
 
         if (!validationResult.IsValid)
         {
@@ -216,19 +218,19 @@ public class VendingItemController : ControllerBase
         try
         {
             await _context.SaveChangesAsync();
+
             return Ok(new
             {
                 message = "Stock berhasil diperbarui.",
-                currentQuantity = stock.Quantity,
-                lastUpdated = stock.LastUpdated
+                currentQuantity = item.Quantity,
+                currentStock = item.Capacity,
+                lastUpdated = item.LastUpdated
             });
         }
-
         catch (Exception ex)
         {
             return StatusCode(500, new { message = "Gagal memperbarui stok.", error = ex.Message });
         }
-
     }
 
 

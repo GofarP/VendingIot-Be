@@ -125,6 +125,7 @@ public class UserController : ControllerBase
     }
 
     [HttpPost]
+    [HasPermission("create-employee")]
     [Consumes("multipart/form-data")]
     public async Task<IActionResult> Create([FromForm] UserCreateDto dto)
     {
@@ -190,6 +191,7 @@ public class UserController : ControllerBase
     }
 
     [HttpPut("{id}")]
+    [HasPermission("edit-employee")]
     [Consumes("multipart/form-data")]
     public async Task<IActionResult> Update(string id, [FromForm] UserUpdateDTO dto)
     {
@@ -256,6 +258,7 @@ public class UserController : ControllerBase
     }
 
     [HttpDelete("{id}")]
+    [HasPermission("delete-employee")]
     public async Task<IActionResult> Delete(string id)
     {
         var user = await _userManager.FindByIdAsync(id);
