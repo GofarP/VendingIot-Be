@@ -227,7 +227,7 @@ public class AuthController : ControllerBase
 
         var roles = await _userManager.GetRolesAsync(user);
 
-        return Ok(new { email = user.Email, fullName = user.FullName, roles = roles });
+        return Ok(new { email = user.Email, fullName = user.FullName, roles = roles, photo=user.Photo });
     }
 
     [HttpPost("refresh")]
