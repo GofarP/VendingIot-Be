@@ -13,6 +13,8 @@ using VendingIoT.Helpers;
 using VendingIot.Authorization;
 using VendingIot.Hubs;
 using Microsoft.AspNetCore.SignalR;
+using VendingIot.Services;
+using VendingIot.Middlewares;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -20,6 +22,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddValidatorsFromAssemblyContaining<DepartmentValidator>();
 builder.Services.AddScoped<ITokenHelper, TokenHelper>();
 builder.Services.AddScoped<IFileService, FileService>();
+builder.Services.AddScoped<IAuthService, AuthService>();
 
 var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
 builder.Services.AddDbContext<ApplicationDbContext>(options =>
@@ -119,6 +122,8 @@ builder.Services.AddSignalR(options=>
 var app = builder.Build();
 
 // 2. MIDDLEWARE PIPELINE
+app.UseMiddleware<ExceptionMiddleware>();
+
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();

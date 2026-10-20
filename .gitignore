@@ -483,8 +483,10 @@ $RECYCLE.BIN/
 # Vim temporary swap files
 *.swp
 
-#appsettings.json for mysql connection
-*appsettings.json
+# appsettings berisi secrets - jangan di-commit
+*appsettings*.json
+# Kecuali file template/example untuk referensi tim
+!appsettings.example.json
 
 #upload for users photo
 wwwroot/uploads/users/*

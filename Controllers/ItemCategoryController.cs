@@ -1,179 +1,110 @@
-using VendingIot.Models;
-using Microsoft.AspNetCore.Identity;
-using Microsoft.AspNetCore.Mvc;
-using VendingIot.Data;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.AspNetCore.Authorization;
 using FluentValidation;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using VendingIot.Data;
+using VendingIot.Extensions;
+using VendingIot.Models;
 
-namespace VendingIot.Controllers
+namespace VendingIot.Controllers;
+
+[Authorize]
+public class ItemCategoryController : BaseApiController
 {
-    [ApiController]
-    [Route("api/[controller]")]
-    [Authorize]
-    public class ItemCategoryController : ControllerBase
+    private readonly ApplicationDbContext _context;
+    private readonly IValidator<ItemCategory> _validator;
+
+    public ItemCategoryController(ApplicationDbContext context, IValidator<ItemCategory> validator)
     {
-        private readonly ApplicationDbContext _context;
-        private readonly IValidator<ItemCategory> _validator;
+        _context = context;
+        _validator = validator;
+    }
 
-        public ItemCategoryController(ApplicationDbContext context, IValidator<ItemCategory> validator)
+    [HttpGet]
+    public async Task<IActionResult> GetItemCategory([FromQuery] int page = 1, [FromQuery] int pageSize = 10, [FromQuery] string? search = null)
+    {
+        var query = _context.ItemCategories.AsNoTracking().AsQueryable();
+
+        if (!string.IsNullOrEmpty(search))
         {
-            _context = context;
-            _validator = validator;
+            query = query.Where(x => x.Name.Contains(search));
         }
 
+        var result = await query
+            .OrderByDescending(x => x.Id)
+            .ToPagedResponseAsync(page, pageSize);
 
-        [HttpGet]
-        public async Task<IActionResult> GetItemCategory([FromQuery] int page = 1, [FromQuery] int pageSize = 10, [FromQuery] string? search = null)
+        return Ok(result);
+    }
+
+    [HttpGet("{id}")]
+    public async Task<ActionResult<ItemCategory>> GetItemCategory(int id)
+    {
+        var itemCategory = await _context.ItemCategories.FindAsync(id);
+        if (itemCategory == null)
         {
-            try
-            {
-                page = page < 1 ? 1 : page;
-                pageSize = pageSize < 1 ? 10 : pageSize;
-
-                var query = _context.ItemCategories.AsQueryable();
-
-                if (!string.IsNullOrEmpty(search))
-                {
-                    query = query.Where(x => x.Name.Contains(search));
-                }
-
-                var totalCount = await query.CountAsync();
-                var ItemCategories = await query
-                    .OrderByDescending(x => x.Id)
-                    .Skip((page - 1) * pageSize)
-                    .Take(pageSize)
-                    .ToListAsync();
-
-                return Ok(new
-                {
-                    data = ItemCategories,
-                    pagination = new
-                    {
-                        totalCount,
-                        pageSize,
-                        currentPage = page,
-                        totalPages = (int)Math.Ceiling(totalCount / (double)pageSize)
-                    }
-                });
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, new { message = "Internal Server Error", error = ex.Message });
-            }
+            return NotFound(new { message = $"ItemCategory with ID {id} not found." });
         }
 
-        [HttpGet("{id}")]
-        public async Task<ActionResult<ItemCategory>> GetItemCategory(int id)
+        return Ok(itemCategory);
+    }
+
+    [HttpPost]
+    public async Task<IActionResult> CreateItemCategory(ItemCategory itemCategory)
+    {
+        var validationResult = await _validator.ValidateAsync(itemCategory);
+        if (!validationResult.IsValid)
         {
-            var itemCategory = await _context.ItemCategories.FindAsync(id);
-
-            if (itemCategory == null)
-            {
-                return NotFound(new { message = $"Departemen with ID {id} not found." });
-            }
-
-            return Ok(itemCategory);
+            return ValidationBadRequest(validationResult);
         }
 
-        [HttpPost]
-        public async Task<IActionResult> CreateItemCategory(ItemCategory itemCategory)
+        _context.ItemCategories.Add(itemCategory);
+        await _context.SaveChangesAsync();
+
+        return CreatedAtAction(nameof(GetItemCategory), new { id = itemCategory.Id }, new
         {
-            var validationResult = await _validator.ValidateAsync(itemCategory);
+            message = "Berhasil Membuat itemcategory baru",
+            data = itemCategory
+        });
+    }
 
-            if (!validationResult.IsValid)
-            {
-                return BadRequest(new
-                {
-                    message = "Validation failed",
-                    errors = validationResult.Errors
-                        .GroupBy(e => e.PropertyName)
-                        .ToDictionary(
-                            g => g.Key,
-                            g => g.Select(e => e.ErrorMessage).ToArray()
-                        )
-                });
-            }
-
-            try
-            {
-                _context.ItemCategories.Add(itemCategory);
-                await _context.SaveChangesAsync();
-                return CreatedAtAction(nameof(GetItemCategory), new { id = itemCategory.Id }, new
-                {
-                    message = "Berhasil Membuat itemcategory baru",
-                    data = itemCategory
-                });
-            }
-
-            catch (Exception e)
-            {
-                return StatusCode(500, new { message = "Gagal menyimpan ke database.", error = e.Message });
-            }
+    [HttpPut("{id}")]
+    public async Task<IActionResult> UpdateItemCategory(int id, ItemCategory itemCategory)
+    {
+        if (id != itemCategory.Id)
+        {
+            return BadRequest(new { message = "ID di URL dan data tidak cocok." });
         }
 
-
-        [HttpPut("{id}")]
-        public async Task<IActionResult> UpdateItemCategory(int id, ItemCategory itemCategory)
+        var validationResult = await _validator.ValidateAsync(itemCategory);
+        if (!validationResult.IsValid)
         {
-            if (id != itemCategory.Id)
-            {
-                return BadRequest(new { message = "ID di URL dan data tidak cocok." });
-            }
-
-            var validationResult = await _validator.ValidateAsync(itemCategory);
-
-            if (!validationResult.IsValid)
-            {
-                return BadRequest(new
-                {
-                    message = "Validation Failed",
-                    errors = validationResult.Errors
-                        .GroupBy(e => e.PropertyName)
-                        .ToDictionary(
-                            g => g.Key,
-                            g => g.Select(e => e.ErrorMessage).ToArray()
-                        )
-                });
-            }
-
-            _context.Entry(itemCategory).State = EntityState.Modified;
-
-            try
-            {
-                await _context.SaveChangesAsync();
-                return Ok(new { message = "Data Berhasil Diperbarui.", data = itemCategory });
-            }
-            catch (DbUpdateConcurrencyException)
-            {
-                if (!_context.Departments.Any(e => e.Id == id))
-                {
-                    return NotFound(new { message = "Data sudah tidak ada di database." });
-                }
-                throw;
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, new { message = "Gagal memperbarui data.", error = ex.Message });
-            }
+            return ValidationBadRequest(validationResult);
         }
 
-
-        [HttpDelete("{id}")]
-        public async Task<IActionResult> DeleteItemCategory(int id)
+        if (!await _context.ItemCategories.AnyAsync(e => e.Id == id))
         {
-            var itemCategory = await _context.ItemCategories.FindAsync(id);
-            if (itemCategory == null)
-            {
-                return NotFound(new { message = "Data tidak ditemukan." });
-            }
-
-            _context.ItemCategories.Remove(itemCategory);
-            await _context.SaveChangesAsync();
-            return Ok(new { message = $"Item Category {itemCategory.Name} berhasil dihapus." });
-
+            return NotFound(new { message = "Data sudah tidak ada di database." });
         }
 
+        _context.Entry(itemCategory).State = EntityState.Modified;
+        await _context.SaveChangesAsync();
 
+        return Ok(new { message = "Data Berhasil Diperbarui.", data = itemCategory });
+    }
+
+    [HttpDelete("{id}")]
+    public async Task<IActionResult> DeleteItemCategory(int id)
+    {
+        var itemCategory = await _context.ItemCategories.FindAsync(id);
+        if (itemCategory == null)
+        {
+            return NotFound(new { message = "Data tidak ditemukan." });
+        }
+
+        _context.ItemCategories.Remove(itemCategory);
+        await _context.SaveChangesAsync();
+
+        return Ok(new { message = $"Item Category {itemCategory.Name} berhasil dihapus." });
     }
 }

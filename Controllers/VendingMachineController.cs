@@ -1,16 +1,15 @@
+using FluentValidation;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.AspNetCore.Authorization;
-using FluentValidation;
 using VendingIot.Data;
+using VendingIot.Extensions;
 using VendingIot.Models;
 
 namespace VendingIot.Controllers;
 
-[ApiController]
-[Route("api/[controller]")]
 [Authorize]
-public class VendingMachineController : ControllerBase
+public class VendingMachineController : BaseApiController
 {
     private readonly ApplicationDbContext _context;
     private readonly IValidator<VendingMachine> _validator;
@@ -24,50 +23,31 @@ public class VendingMachineController : ControllerBase
     [HttpGet]
     public async Task<IActionResult> GetAll([FromQuery] int page = 1, [FromQuery] int pageSize = 10, [FromQuery] string? search = null)
     {
-        try
+        var query = _context.VendingMachines.AsNoTracking().AsQueryable();
+
+        if (!string.IsNullOrEmpty(search))
         {
-            page = page < 1 ? 1 : page;
-            pageSize = pageSize < 1 ? 10 : pageSize;
-
-            var query = _context.VendingMachines.AsQueryable();
-
-            if (!string.IsNullOrEmpty(search))
-            {
-                query = query.Where(x => x.Name.Contains(search) ||
-                                       x.MachineCode.Contains(search) ||
-                                       x.Location.Contains(search));
-            }
-
-            var totalCount = await query.CountAsync();
-            var data = await query
-                .OrderByDescending(x => x.Id)
-                .Skip((page - 1) * pageSize)
-                .Take(pageSize)
-                .ToListAsync();
-
-            return Ok(new
-            {
-                data,
-                pagination = new
-                {
-                    totalCount,
-                    pageSize,
-                    currentPage = page,
-                    totalPages = (int)Math.Ceiling(totalCount / (double)pageSize)
-                }
-            });
+            query = query.Where(x => x.Name.Contains(search) ||
+                                     x.MachineCode.Contains(search) ||
+                                     x.Location.Contains(search));
         }
-        catch (Exception ex)
-        {
-            return StatusCode(500, new { message = "Internal Server Error", error = ex.Message });
-        }
+
+        var result = await query
+            .OrderByDescending(x => x.Id)
+            .ToPagedResponseAsync(page, pageSize);
+
+        return Ok(result);
     }
 
     [HttpGet("{id}")]
     public async Task<IActionResult> GetById(int id)
     {
         var machine = await _context.VendingMachines.FindAsync(id);
-        if (machine == null) return NotFound(new { message = "Mesin tidak ditemukan." });
+        if (machine == null)
+        {
+            return NotFound(new { message = "Mesin tidak ditemukan." });
+        }
+
         return Ok(machine);
     }
 
@@ -77,77 +57,67 @@ public class VendingMachineController : ControllerBase
         var validationResult = await _validator.ValidateAsync(machine);
         if (!validationResult.IsValid)
         {
-            return BadRequest(new
-            {
-                message = "Validation Failed",
-                errors = validationResult.Errors
-                    .GroupBy(e => e.PropertyName)
-                    .ToDictionary(g => g.Key, g => g.Select(e => e.ErrorMessage).ToArray())
-            });
+            return ValidationBadRequest(validationResult);
         }
 
-        try
+        _context.VendingMachines.Add(machine);
+        await _context.SaveChangesAsync();
+
+        return CreatedAtAction(nameof(GetById), new { id = machine.Id }, new
         {
-            _context.VendingMachines.Add(machine);
-            await _context.SaveChangesAsync();
-            return CreatedAtAction(nameof(GetById), new { id = machine.Id }, new { message = "Mesin berhasil didaftarkan.", data = machine });
-        }
-        catch (Exception ex)
-        {
-            return StatusCode(500, new { message = "Gagal menyimpan data.", error = ex.Message });
-        }
+            message = "Mesin berhasil didaftarkan.",
+            data = machine
+        });
     }
 
-    // 4. PUT (Update)
     [HttpPut("{id}")]
     public async Task<IActionResult> Update(int id, VendingMachine machine)
     {
-        if (id != machine.Id) return BadRequest(new { message = "ID tidak cocok." });
+        if (id != machine.Id)
+        {
+            return BadRequest(new { message = "ID tidak cocok." });
+        }
 
         var validationResult = await _validator.ValidateAsync(machine);
         if (!validationResult.IsValid)
         {
-            return BadRequest(new
-            {
-                message = "Validation Failed",
-                errors = validationResult.Errors
-                    .GroupBy(e => e.PropertyName)
-                    .ToDictionary(g => g.Key, g => g.Select(e => e.ErrorMessage).ToArray())
-            });
+            return ValidationBadRequest(validationResult);
+        }
+
+        if (!await _context.VendingMachines.AnyAsync(e => e.Id == id))
+        {
+            return NotFound();
         }
 
         _context.Entry(machine).State = EntityState.Modified;
+        await _context.SaveChangesAsync();
 
-        try
-        {
-            await _context.SaveChangesAsync();
-            return Ok(new { message = "Data mesin berhasil diperbarui.", data = machine });
-        }
-        catch (DbUpdateConcurrencyException)
-        {
-            if (!_context.VendingMachines.Any(e => e.Id == id)) return NotFound();
-            throw;
-        }
+        return Ok(new { message = "Data mesin berhasil diperbarui.", data = machine });
     }
 
-    // 5. DELETE
     [HttpDelete("{id}")]
     public async Task<IActionResult> Delete(int id)
     {
         var machine = await _context.VendingMachines.FindAsync(id);
-        if (machine == null) return NotFound(new { message = "Data tidak ditemukan." });
+        if (machine == null)
+        {
+            return NotFound(new { message = "Data tidak ditemukan." });
+        }
 
         _context.VendingMachines.Remove(machine);
         await _context.SaveChangesAsync();
+
         return Ok(new { message = $"Mesin {machine.MachineCode} berhasil dihapus." });
     }
-
 
     [HttpPost("{id}/heartbeat")]
     public async Task<IActionResult> Heartbeat(int id)
     {
         var machine = await _context.VendingMachines.FindAsync(id);
-        if (machine == null) return NotFound();
+        if (machine == null)
+        {
+            return NotFound();
+        }
 
         machine.LastRestock = DateTime.Now;
         await _context.SaveChangesAsync();

@@ -1,193 +1,123 @@
-using VendingIot.Models;
-using Microsoft.AspNetCore.Mvc;
-using VendingIot.Data;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.AspNetCore.Authorization;
 using FluentValidation;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using VendingIot.Data;
+using VendingIot.Extensions;
+using VendingIot.Models;
 
-namespace VendingIot.Controllers
+namespace VendingIot.Controllers;
+
+[Authorize]
+public class ItemController : BaseApiController
 {
-    [ApiController]
-    [Route("api/[controller]")]
-    [Authorize]
-    public class ItemController : ControllerBase
+    private readonly ApplicationDbContext _context;
+    private readonly IValidator<Item> _validator;
+
+    public ItemController(ApplicationDbContext context, IValidator<Item> validator)
     {
-        private readonly ApplicationDbContext _context;
-        private readonly IValidator<Item> _validator;
+        _context = context;
+        _validator = validator;
+    }
 
-        public ItemController(ApplicationDbContext context, IValidator<Item> validator)
+    [HttpGet]
+    public async Task<IActionResult> GetItem([FromQuery] int page = 1, [FromQuery] int pageSize = 10, [FromQuery] string? search = null)
+    {
+        var query = _context.Items
+            .Include(i => i.ItemCategory)
+            .AsNoTracking()
+            .AsQueryable();
+
+        if (!string.IsNullOrEmpty(search))
         {
-            _context = context;
-            _validator = validator;
+            query = query.Where(i => i.Name.Contains(search) ||
+                                     (i.ItemCategory != null && i.ItemCategory.Name.Contains(search)));
         }
 
-        [HttpGet]
-        public async Task<IActionResult> GetItem([FromQuery] int page = 1, [FromQuery] int pageSize = 10, [FromQuery] string? search = null)
+        var result = await query
+            .OrderByDescending(i => i.Id)
+            .Select(i => new ItemResponseDto
+            {
+                Id = i.Id,
+                Name = i.Name,
+                Price = i.Price,
+                Quantity = i.Quantity,
+                ItemCategoryId = i.ItemCategoryId,
+                ItemCategoryName = i.ItemCategory != null ? i.ItemCategory.Name : "-"
+            })
+            .ToPagedResponseAsync(page, pageSize, success: true);
+
+        return Ok(result);
+    }
+
+    [HttpGet("{id}")]
+    public async Task<ActionResult<Item>> GetItem(int id)
+    {
+        var item = await _context.Items.FindAsync(id);
+        if (item == null)
         {
-            try
-            {
-                page = page < 1 ? 1 : page;
-                pageSize = pageSize < 1 ? 10 : pageSize;
-
-                var query = _context.Items
-                    .Include(i => i.ItemCategory)
-                    .AsNoTracking()
-                    .AsQueryable();
-
-                if (!string.IsNullOrEmpty(search))
-                {
-                    query = query.Where(i => i.Name.Contains(search) ||
-                                             (i.ItemCategory != null && i.ItemCategory.Name.Contains(search)));
-                }
-
-                var totalCount = await query.CountAsync();
-
-                var items = await query
-                    .OrderByDescending(i => i.Id)
-                    .Skip((page - 1) * pageSize)
-                    .Take(pageSize)
-                    .Select(i => new ItemResponseDto
-                    {
-                        Id = i.Id,
-                        Name = i.Name,
-                        Price = i.Price,
-                        Quantity = i.Quantity,
-                        ItemCategoryId = i.ItemCategoryId,
-                        ItemCategoryName = i.ItemCategory != null ? i.ItemCategory.Name : "-"
-                    })
-                    .ToListAsync();
-
-                return Ok(new
-                {
-                    success = true,
-                    data = items,
-                    pagination = new
-                    {
-                        totalCount,
-                        pageSize,
-                        currentPage = page,
-                        totalPages = (int)Math.Ceiling(totalCount / (double)pageSize)
-                    }
-                });
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, new { success = false, message = "Internal Server Error", error = ex.Message });
-            }
+            return NotFound(new { message = $"Item with ID {id} not found." });
         }
 
-        [HttpGet("{id}")]
-        public async Task<ActionResult<Item>> GetItem(int id)
+        return Ok(item);
+    }
+
+    [HttpPost]
+    public async Task<IActionResult> CreateItem(Item item)
+    {
+        var validationResult = await _validator.ValidateAsync(item);
+        if (!validationResult.IsValid)
         {
-            var item = await _context.Items.FindAsync(id);
-
-            if (item == null)
-            {
-                return NotFound(new { message = $"Item with ID {id} not found." });
-            }
-
-            return Ok(item);
+            return ValidationBadRequest(validationResult);
         }
 
+        _context.Items.Add(item);
+        await _context.SaveChangesAsync();
 
-        [HttpPost]
-        public async Task<IActionResult> CreateItem(Item item)
+        return CreatedAtAction(nameof(GetItem), new { id = item.Id }, new
         {
-            var validationResult = await _validator.ValidateAsync(item);
+            message = "Berhasil Membuat item baru",
+            data = item
+        });
+    }
 
-            if (!validationResult.IsValid)
-            {
-                return BadRequest(new
-                {
-                    message = "Validation failed",
-                    errors = validationResult.Errors
-                        .GroupBy(e => e.PropertyName)
-                        .ToDictionary(
-                            g => g.Key,
-                            g => g.Select(e => e.ErrorMessage).ToArray()
-                        )
-                });
-            }
-
-            try
-            {
-                _context.Items.Add(item);
-                await _context.SaveChangesAsync();
-                return CreatedAtAction(nameof(GetItem), new { id = item.Id }, new
-                {
-                    message = "Berhasil Membuat item baru",
-                    data = item
-                });
-            }
-            catch (Exception e)
-            {
-                return StatusCode(500, new { message = "Gagal menyimpan ke database.", error = e.Message });
-            }
+    [HttpPut("{id}")]
+    public async Task<IActionResult> UpdateItem(int id, Item item)
+    {
+        if (id != item.Id)
+        {
+            return BadRequest(new { message = "ID di URL dan data tidak cocok." });
         }
 
-
-        [HttpPut("{id}")]
-        public async Task<IActionResult> UpdateItem(int id, Item item)
+        var validationResult = await _validator.ValidateAsync(item);
+        if (!validationResult.IsValid)
         {
-            if (id != item.Id)
-            {
-                return BadRequest(new { message = "ID di URL dan data tidak cocok." });
-            }
-
-            var validationResult = await _validator.ValidateAsync(item);
-
-            if (!validationResult.IsValid)
-            {
-                return BadRequest(new
-                {
-                    message = "Validation Failed",
-                    errors = validationResult.Errors
-                        .GroupBy(e => e.PropertyName)
-                        .ToDictionary(
-                            g => g.Key,
-                            g => g.Select(e => e.ErrorMessage).ToArray()
-                        )
-                });
-            }
-
-            _context.Entry(item).State = EntityState.Modified;
-
-            try
-            {
-                await _context.SaveChangesAsync();
-                return Ok(new { message = "Data Berhasil Diperbarui.", data = item });
-            }
-            catch (DbUpdateConcurrencyException)
-            {
-                if (!_context.Departments.Any(e => e.Id == id))
-                {
-                    return NotFound(new { message = "Data sudah tidak ada di database." });
-                }
-                throw;
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, new { message = "Gagal memperbarui data.", error = ex.Message });
-            }
+            return ValidationBadRequest(validationResult);
         }
 
-        [HttpDelete("{id}")]
-        public async Task<IActionResult> DeleteItem(int id)
+        if (!await _context.Items.AnyAsync(e => e.Id == id))
         {
-            var item = await _context.Items.FindAsync(id);
-            if (item == null)
-            {
-                return NotFound(new { message = "Data tidak ditemukan." });
-            }
-
-            _context.Items.Remove(item);
-            await _context.SaveChangesAsync();
-            return Ok(new { message = $"Item {item.Name} berhasil dihapus." });
+            return NotFound(new { message = "Data sudah tidak ada di database." });
         }
 
+        _context.Entry(item).State = EntityState.Modified;
+        await _context.SaveChangesAsync();
 
+        return Ok(new { message = "Data Berhasil Diperbarui.", data = item });
+    }
 
+    [HttpDelete("{id}")]
+    public async Task<IActionResult> DeleteItem(int id)
+    {
+        var item = await _context.Items.FindAsync(id);
+        if (item == null)
+        {
+            return NotFound(new { message = "Data tidak ditemukan." });
+        }
 
+        _context.Items.Remove(item);
+        await _context.SaveChangesAsync();
 
+        return Ok(new { message = $"Item {item.Name} berhasil dihapus." });
     }
 }

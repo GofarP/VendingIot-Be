@@ -1,174 +1,112 @@
-using VendingIot.Models;
-using Microsoft.AspNetCore.Mvc;
-using VendingIot.Data;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.AspNetCore.Authorization;
 using FluentValidation;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+using VendingIot.Data;
+using VendingIot.Extensions;
+using VendingIot.Models;
 
-namespace VendingIot.Controllers
+namespace VendingIot.Controllers;
+
+[Authorize]
+public class DepartmentController : BaseApiController
 {
-    [ApiController]
-    [Route("api/[controller]")]
-    [Authorize]
-    public class DepartmentController : ControllerBase
+    private readonly ApplicationDbContext _context;
+    private readonly IValidator<Department> _validator;
+
+    public DepartmentController(ApplicationDbContext context, IValidator<Department> validator)
     {
-        private readonly ApplicationDbContext _context;
-        private readonly IValidator<Department> _validator;
+        _context = context;
+        _validator = validator;
+    }
 
-        public DepartmentController(ApplicationDbContext context, IValidator<Department> validator)
+    [HttpGet]
+    public async Task<IActionResult> GetDepartments([FromQuery] int page = 1, [FromQuery] int pageSize = 10, [FromQuery] string? search = null)
+    {
+        var query = _context.Departments.AsNoTracking().AsQueryable();
+
+        if (!string.IsNullOrEmpty(search))
         {
-            _context = context;
-            _validator = validator;
+            query = query.Where(d =>
+                d.Name.Contains(search) ||
+                (d.Description != null && d.Description.Contains(search)));
         }
 
-        [HttpGet]
-        public async Task<IActionResult> GetDepartments([FromQuery] int page = 1, [FromQuery] int pageSize = 10, [FromQuery] string? search = null)
+        var result = await query
+            .OrderByDescending(d => d.Id)
+            .ToPagedResponseAsync(page, pageSize);
+
+        return Ok(result);
+    }
+
+    [HttpGet("{id}")]
+    public async Task<ActionResult<Department>> GetDepartment(int id)
+    {
+        var department = await _context.Departments.FindAsync(id);
+        if (department == null)
         {
-            try
-            {
-                page = page < 1 ? 1 : page;
-                pageSize = pageSize < 1 ? 10 : pageSize;
-
-                var query = _context.Departments.AsQueryable();
-
-                if (!string.IsNullOrEmpty(search))
-                {   
-                    query = query.Where(d =>
-                    d.Name.Contains(search) ||
-                    (d.Description != null && d.Description.Contains(search)));
-                }
-
-                var totalCount = await query.CountAsync();
-                var departments = await query
-                    .OrderByDescending(d => d.Id)
-                    .Skip((page - 1) * pageSize)
-                    .Take(pageSize)
-                    .ToListAsync();
-
-                return Ok(new
-                {
-                    data = departments,
-                    pagination = new
-                    {
-                        totalCount,
-                        pageSize,
-                        currentPage = page,
-                        totalPages = (int)Math.Ceiling(totalCount / (double)pageSize)
-                    }
-                });
-            }
-
-            catch (Exception ex)
-            {
-                return StatusCode(500, new { message = "Internal Server Error", error = ex.Message });
-            }
+            return NotFound(new { message = $"Departemen with ID {id} not found." });
         }
 
-        [HttpGet("{id}")]
-        public async Task<ActionResult<Department>> GetDepartment(int id)
+        return Ok(department);
+    }
+
+    [HttpPost]
+    public async Task<IActionResult> CreateDepartment(Department department)
+    {
+        var validationResult = await _validator.ValidateAsync(department);
+        if (!validationResult.IsValid)
         {
-            var department = await _context.Departments.FindAsync(id);
-
-            if (department == null)
-            {
-                return NotFound(new { message = $"Departemen with ID {id} not found." });
-            }
-
-            return Ok(department);
+            return ValidationBadRequest(validationResult);
         }
 
-        [HttpPost]
-        public async Task<IActionResult> CreateDepartment(Department department)
+        _context.Departments.Add(department);
+        await _context.SaveChangesAsync();
+
+        return CreatedAtAction(nameof(GetDepartment), new { id = department.Id }, new
         {
-            var validationResult = await _validator.ValidateAsync(department);
+            message = "Berhasil Membuat department baru",
+            data = department
+        });
+    }
 
-            if (!validationResult.IsValid)
-            {
-                return BadRequest(new
-                {
-                    message = "Validation failed",
-                    errors = validationResult.Errors
-                        .GroupBy(e => e.PropertyName)
-                        .ToDictionary(
-                            g => g.Key,
-                            g => g.Select(e => e.ErrorMessage).ToArray()
-                        )
-                });
-            }
-
-            try
-            {
-                _context.Departments.Add(department);
-                await _context.SaveChangesAsync();
-                return CreatedAtAction(nameof(GetDepartment), new { id = department.Id }, new
-                {
-                    message = "Berhasil Membuat department baru",
-                    data = department
-                });
-            }
-            catch (Exception e)
-            {
-                return StatusCode(500, new { message = "Gagal menyimpan ke database.", error = e.Message });
-            }
+    [HttpPut("{id}")]
+    public async Task<IActionResult> UpdateDepartment(int id, Department department)
+    {
+        if (id != department.Id)
+        {
+            return BadRequest(new { message = $"ID di URL dan data tidak cocok. id:{department.Id}" });
         }
 
-        [HttpPut("{id}")]
-        public async Task<IActionResult> UpdateDepartment(int id, Department department)
+        var validationResult = await _validator.ValidateAsync(department);
+        if (!validationResult.IsValid)
         {
-            if (id != department.Id)
-            {
-                return BadRequest(new { message = "ID di URL dan data tidak cocok. id:"+department });
-            }
-
-            var validationResult = await _validator.ValidateAsync(department);
-
-            if (!validationResult.IsValid)
-            {
-                return BadRequest(new
-                {
-                    message = "Validation Failed",
-                    errors = validationResult.Errors
-                        .GroupBy(e => e.PropertyName)
-                        .ToDictionary(
-                            g => g.Key,
-                            g => g.Select(e => e.ErrorMessage).ToArray()
-                        )
-                });
-            }
-
-            _context.Entry(department).State = EntityState.Modified;
-
-            try
-            {
-                await _context.SaveChangesAsync();
-                return Ok(new { message = "Data Berhasil Diperbarui.", data = department });
-            }
-            catch (DbUpdateConcurrencyException)
-            {
-                if (!_context.Departments.Any(e => e.Id == id))
-                {
-                    return NotFound(new { message = "Data sudah tidak ada di database." });
-                }
-                throw;
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, new { message = "Gagal memperbarui data.", error = ex.Message });
-            }
+            return ValidationBadRequest(validationResult);
         }
 
-        [HttpDelete("{id}")]
-        public async Task<IActionResult> DeleteDepartment(int id)
+        if (!await _context.Departments.AnyAsync(e => e.Id == id))
         {
-            var department = await _context.Departments.FindAsync(id);
-            if (department == null)
-            {
-                return NotFound(new { message = "Data tidak ditemukan." });
-            }
-
-            _context.Departments.Remove(department);
-            await _context.SaveChangesAsync();
-            return Ok(new { message = $"Departemen {department.Name} berhasil dihapus." });
+            return NotFound(new { message = "Data sudah tidak ada di database." });
         }
+
+        _context.Entry(department).State = EntityState.Modified;
+        await _context.SaveChangesAsync();
+
+        return Ok(new { message = "Data Berhasil Diperbarui.", data = department });
+    }
+
+    [HttpDelete("{id}")]
+    public async Task<IActionResult> DeleteDepartment(int id)
+    {
+        var department = await _context.Departments.FindAsync(id);
+        if (department == null)
+        {
+            return NotFound(new { message = "Data tidak ditemukan." });
+        }
+
+        _context.Departments.Remove(department);
+        await _context.SaveChangesAsync();
+
+        return Ok(new { message = $"Departemen {department.Name} berhasil dihapus." });
     }
 }

@@ -3,30 +3,32 @@ using FluentValidation;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using VendingIot.Helpers;
 using VendingIot.Models;
 
+namespace VendingIot.Controllers;
+
 [Authorize]
-[ApiController]
-[Route("api/[controller]")]
-public class ProfileController : ControllerBase
+public class ProfileController : BaseApiController
 {
     private readonly UserManager<ApplicationUser> _userManager;
-
     private readonly RoleManager<IdentityRole> _roleManager;
-
     private readonly IValidator<ChangePasswordDTO> _changePasswordValidator;
     private readonly IValidator<UpdateProfileDTO> _updateProfileValidator;
+    private readonly IFileService _fileService;
 
     public ProfileController(
         UserManager<ApplicationUser> userManager,
         IValidator<ChangePasswordDTO> changePasswordValidator,
         IValidator<UpdateProfileDTO> updateProfileValidator,
-        RoleManager<IdentityRole> roleManager)
+        RoleManager<IdentityRole> roleManager,
+        IFileService fileService)
     {
         _userManager = userManager;
         _changePasswordValidator = changePasswordValidator;
         _updateProfileValidator = updateProfileValidator;
         _roleManager = roleManager;
+        _fileService = fileService;
     }
 
     [HttpPut("updateprofile")]
@@ -35,25 +37,19 @@ public class ProfileController : ControllerBase
         var validationResult = await _updateProfileValidator.ValidateAsync(model);
         if (!validationResult.IsValid)
         {
-            return BadRequest(new
-            {
-                message = "Validation failed",
-                errors = validationResult.Errors
-                         .GroupBy(e => e.PropertyName)
-                         .ToDictionary(
-                             g => g.Key,
-                             g => g.Select(e => e.ErrorMessage).ToArray()
-                         )
-            });
+            return ValidationBadRequest(validationResult);
         }
 
         var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
         var user = await _userManager.FindByIdAsync(userId!);
-        if (user == null) return Unauthorized(new { message = "User tidak ditemukan" });
+        if (user == null)
+        {
+            return Unauthorized(new { message = "User tidak ditemukan" });
+        }
 
         user.FullName = model.FullName;
         user.Email = model.Email;
-        user.UserName = model.Email; 
+        user.UserName = model.Email;
 
         if (model.Photo != null && model.Photo.Length > 0)
         {
@@ -61,10 +57,10 @@ public class ProfileController : ControllerBase
             {
                 if (!string.IsNullOrEmpty(user.Photo))
                 {
-                    DeleteOldFile(user.Photo);
+                    _fileService.DeleteFile(user.Photo, "users");
                 }
 
-                user.Photo = await SaveFile(model.Photo);
+                user.Photo = await _fileService.SaveFileAsync(model.Photo, "users");
             }
             catch (Exception ex)
             {
@@ -94,7 +90,7 @@ public class ProfileController : ControllerBase
                 email = user.Email,
                 fullName = user.FullName,
                 photoUrl = user.Photo,
-                roles = roles,
+                roles,
                 permissions = permissions.Distinct().ToList()
             });
         }
@@ -110,51 +106,24 @@ public class ProfileController : ControllerBase
     public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordDTO model)
     {
         var validationResult = await _changePasswordValidator.ValidateAsync(model);
-
         if (!validationResult.IsValid)
         {
-            return BadRequest(new
-            {
-                message = "Validation failed",
-                errors = validationResult.Errors
-                        .GroupBy(e => e.PropertyName)
-                        .ToDictionary(
-                            g => g.Key,
-                            g => g.Select(e => e.ErrorMessage).ToArray()
-                        )
-            });
+            return ValidationBadRequest(validationResult);
         }
-        var userid = User.FindFirstValue(ClaimTypes.NameIdentifier);
-        var user = await _userManager.FindByIdAsync(userid!);
 
-        if (user == null) return Unauthorized();
+        var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
+        var user = await _userManager.FindByIdAsync(userId!);
+        if (user == null)
+        {
+            return Unauthorized();
+        }
 
         var result = await _userManager.ChangePasswordAsync(user, model.OldPassword, model.NewPassword);
-
         if (result.Succeeded)
         {
             return Ok(new { message = "Password Berhasil Diubah" });
         }
 
         return BadRequest(new { message = "Gagal Mengubah Password", errors = result.Errors });
-    }
-
-    private async Task<string> SaveFile(IFormFile file)
-    {
-        var path = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot/uploads/users");
-        if (!Directory.Exists(path)) Directory.CreateDirectory(path);
-
-        var fileName = Guid.NewGuid() + Path.GetExtension(file.FileName);
-        var fullPath = Path.Combine(path, fileName);
-
-        using var stream = new FileStream(fullPath, FileMode.Create);
-        await file.CopyToAsync(stream);
-        return fileName;
-    }
-
-    private void DeleteOldFile(string fileName)
-    {
-        var path = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot/uploads/users", fileName);
-        if (System.IO.File.Exists(path)) System.IO.File.Delete(path);
     }
 }
